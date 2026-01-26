@@ -1,6 +1,6 @@
 import { getPostmarkTransactionalToken, sendPostmarkEmail } from './postmark.js';
 
-const DEFAULT_FROM = 'news.updates@execdesk.ai';
+const DEFAULT_FROM = 'Projects <projects@execdesk.ai>';
 const DEFAULT_REPLY_TO = 'quasar@execdesk.ai';
 
 export type SendMagicLinkArgs = {

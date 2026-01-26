@@ -60,7 +60,7 @@ describe('Postmark delivery for magic-link auth', () => {
     expect(init.headers['X-Postmark-Server-Token']).toBe('test-token');
 
     const body = JSON.parse(init.body);
-    expect(body.From).toBe('news.updates@execdesk.ai');
+    expect(body.From).toBe('Projects <projects@execdesk.ai>');
     expect(body.ReplyTo).toBe('quasar@execdesk.ai');
     expect(body.To).toBe('test@example.com');
     expect(body.Subject).toMatch(/login link/i);
