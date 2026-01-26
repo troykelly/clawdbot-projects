@@ -1,0 +1,27 @@
+{
+  "name": "clawdbot-projects",
+  "version": "1.0.0",
+  "description": "Postgres-backed project + task management system",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "migrate:up": "migrate -path migrations -database \"$DATABASE_URL\" up",
+    "migrate:down": "migrate -path migrations -database \"$DATABASE_URL\" down 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.28.1",
+  "devDependencies": {
+    "@types/node": "^25.0.10",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "@types/pg": "^8.16.0",
+    "pg": "^8.17.2"
+  }
+}
