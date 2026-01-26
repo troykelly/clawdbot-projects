@@ -23,6 +23,16 @@ Adds to `work_item`:
 - `task_type` (`work_item_task_type` enum: `general|coding|admin|ops|research|meeting`)
 - `not_before` / `not_after` scheduling window with check constraint (`not_before <= not_after` when both are set)
 
+## Contacts (Issue #9)
+
+- `contact`
+  - `display_name`, optional `notes`
+  - coarse trust flags: `allow_schedule`, `allow_auto_reply_safe_only`
+- `contact_endpoint`
+  - typed endpoints (`phone`, `email`, `telegram`, ...)
+  - `normalized_value` is maintained by a DB trigger and is globally unique per `(endpoint_type, normalized_value)`
+  - `allow_privileged_actions` is **never** allowed via `phone` endpoints (DB check constraint)
+
 Notes:
 
 - IDs are UUIDv7 generated in Postgres via `new_uuid()`.
