@@ -13,3 +13,7 @@
 
 - Internal work items can be linked to external entities (initially GitHub: repo/issues/PRs/projects).
 - Sync should be explicit and predictable (start with internal → GitHub updates).
+
+## Assignment / agent identity
+
+- Use a dedicated **agent identity user** for assignment: **Quasar**.
