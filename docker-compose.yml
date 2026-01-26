@@ -1,6 +1,8 @@
 services:
   postgres:
-    image: postgres:18-alpine
+    build:
+      context: .
+      dockerfile: docker/postgres/Dockerfile
     container_name: clawdbot-postgres
     environment:
       POSTGRES_USER: clawdbot
@@ -8,8 +10,15 @@ services:
       POSTGRES_DB: clawdbot
     ports:
       - "5432:5432"
+    # Required for some extensions (notably pg_cron and TimescaleDB)
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=timescaledb,pg_cron
+      - -c
+      - cron.database_name=clawdbot
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U clawdbot -d clawdbot"]
       interval: 5s

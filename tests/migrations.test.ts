@@ -55,6 +55,17 @@ describe('Migrations', () => {
   it('rolls back migrations and removes table + helpers', async () => {
     runMigrate('down', migrationCount());
 
+    // After dropping objects, reconnect to avoid any cached query plans
+    // referencing now-dropped relations.
+    await pool.end();
+    pool = new Pool({
+      host: 'localhost',
+      port: 5432,
+      user: 'clawdbot',
+      password: 'clawdbot',
+      database: 'clawdbot',
+    });
+
     const result = await pool.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables
