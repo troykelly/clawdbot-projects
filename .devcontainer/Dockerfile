@@ -7,5 +7,8 @@ RUN apt-get update \
     nodejs npm \
   && rm -rf /var/lib/apt/lists/*
 
+# Ensure pnpm exists even when host mounts are not present (e.g. GitHub Actions)
+RUN npm install -g pnpm
+
 # Put host-mounted CLIs on PATH when present
 ENV PATH="/home/clawdbot/.npm-global/bin:/home/clawdbot/.local/share/pnpm:$PATH"
