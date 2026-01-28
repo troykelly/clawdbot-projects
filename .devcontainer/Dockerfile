@@ -1,6 +1,7 @@
 FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 
 # Base tooling required for this repo + for installing claude/codex/op inside the container.
+# Note: rust-analyzer isn't available from the default apt sources in this base image.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -9,10 +10,10 @@ RUN apt-get update \
     jq \
     gnupg \
     unzip \
+    gzip \
     postgresql-client \
     nodejs \
     npm \
-    rust-analyzer \
   && rm -rf /var/lib/apt/lists/*
 
 # Ensure pnpm exists even when host mounts are not present.

@@ -15,6 +15,10 @@ command -v op >/dev/null || {
   log "WARN: op not found on PATH (expected via Dockerfile)."
 }
 
+command -v gunzip >/dev/null 2>&1 || {
+  log "WARN: gunzip not found; rust-analyzer install fallback may fail."
+}
+
 install_claude_code() {
   if command -v claude >/dev/null 2>&1; then
     log "Claude Code already installed: $(claude --version 2>/dev/null || true)"
@@ -119,6 +123,29 @@ install_plugins_user_scope() {
     circleback
     pinecone
   )
+
+  # LSP plugins require the corresponding language server binary in PATH.
+  # rust-analyzer-lsp requires rust-analyzer.
+  log "Ensuring rust-analyzer is installed (required for rust-analyzer-lsp)"
+  if ! command -v rust-analyzer >/dev/null 2>&1; then
+    if command -v curl >/dev/null 2>&1; then
+      # Install rust-analyzer directly (static binary) from the upstream releases.
+      # We avoid apt packaging differences between distros/images.
+      local ra_url="https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz"
+      case "$(uname -m)" in
+        x86_64|amd64) ra_url="https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz" ;;
+        aarch64|arm64) ra_url="https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-aarch64-unknown-linux-gnu.gz" ;;
+      esac
+      log "Downloading rust-analyzer from: $ra_url"
+      curl -fsSL "$ra_url" | gunzip -c | sudo tee /usr/local/bin/rust-analyzer >/dev/null
+      sudo chmod +x /usr/local/bin/rust-analyzer
+    fi
+  fi
+  if command -v rust-analyzer >/dev/null 2>&1; then
+    log "rust-analyzer available: $(rust-analyzer --version 2>/dev/null || true)"
+  else
+    log "WARN: rust-analyzer not installed; rust-analyzer-lsp plugin may show errors until installed."
+  fi
 
   log "Installing Claude Code plugins to user scope (~/.claude/settings.json)"
 
