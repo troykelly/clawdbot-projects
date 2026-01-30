@@ -48,12 +48,11 @@ install_codex_binary() {
   local arch
   arch=$(uname -m)
 
-  # Map uname arch to expected asset suffixes.
-  # We'll pick the asset that contains linux + arch.
+  # Map uname arch to the naming used by openai/codex releases.
   local want_arch
   case "$arch" in
-    x86_64|amd64) want_arch="amd64" ;;
-    aarch64|arm64) want_arch="arm64" ;;
+    x86_64|amd64) want_arch="x86_64" ;;
+    aarch64|arm64) want_arch="aarch64" ;;
     *)
       log "ERROR: Unsupported architecture for codex binary install: ${arch}"
       return 1
@@ -63,16 +62,17 @@ install_codex_binary() {
   local release_json
   release_json=$(curl -fsSL https://api.github.com/repos/openai/codex/releases/latest)
 
+  # Prefer the tar.gz linux build (avoids needing zstd).
   local asset_url
   asset_url=$(echo "$release_json" | jq -r --arg a "$want_arch" '
     .assets[]
-    | select((.name|ascii_downcase) | contains("linux"))
-    | select((.name|ascii_downcase) | contains($a))
+    | select((.name|ascii_downcase) | contains(("codex-" + $a + "-unknown-linux-gnu")))
+    | select((.name|ascii_downcase) | endswith(".tar.gz"))
     | .browser_download_url
   ' | head -n 1)
 
   if [[ -z "$asset_url" || "$asset_url" == "null" ]]; then
-    log "ERROR: Could not find a linux/${want_arch} codex release asset."
+    log "ERROR: Could not find a codex ${want_arch} linux (gnu) .tar.gz release asset."
     return 1
   fi
 
@@ -81,12 +81,24 @@ install_codex_binary() {
   trap 'rm -rf "$tmp"' RETURN
 
   log "Downloading: $asset_url"
-  curl -fsSL "$asset_url" -o "$tmp/codex"
-  chmod +x "$tmp/codex"
+  curl -fsSL "$asset_url" -o "$tmp/codex.tar.gz"
+
+  log "Extracting codex"
+  tar -xzf "$tmp/codex.tar.gz" -C "$tmp"
+
+  local codex_path
+  codex_path=$(find "$tmp" -maxdepth 2 -type f \( -name codex -o -name 'codex-*linux*' -o -name 'codex-*unknown-linux-*' \) | head -n 1)
+  if [[ -z "$codex_path" ]]; then
+    log "ERROR: Could not find extracted codex binary in tarball. Contents:";
+    find "$tmp" -maxdepth 2 -type f -print | sed 's#^#  - #' || true
+    return 1
+  fi
+
+  chmod +x "$codex_path"
 
   # Install system-wide so it is available regardless of shell init.
   log "Installing codex to /usr/local/bin (sudo)"
-  sudo install -m 0755 "$tmp/codex" /usr/local/bin/codex
+  sudo install -m 0755 "$codex_path" /usr/local/bin/codex
 
   log "Codex installed: $(/usr/local/bin/codex --version 2>/dev/null || true)"
 }
