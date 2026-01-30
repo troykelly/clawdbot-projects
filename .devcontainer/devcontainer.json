@@ -4,5 +4,6 @@
   "service": "workspace",
   "workspaceFolder": "/workspaces/clawdbot-projects",
   "shutdownAction": "stopCompose",
+  "remoteUser": "vscode",
   "postCreateCommand": "bash .devcontainer/postCreate.sh"
 }

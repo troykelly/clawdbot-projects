@@ -35,6 +35,10 @@ RUN set -eux; \
 # Ensure pnpm exists even when host mounts are not present.
 RUN npm install -g pnpm
 
+# Ensure user-local bins are on PATH for the default devcontainer user (vscode).
+# (Claude installer uses ~/.local/bin)
+RUN echo 'export PATH="$HOME/.local/bin:$HOME/.claude/bin:$PATH"' > /etc/profile.d/99-clawdbot-path.sh
+
 # Install 1Password CLI (op) in the devcontainer.
 # Ref: https://developer.1password.com/docs/cli/get-started/
 RUN set -eux; \
