@@ -12,10 +12,15 @@ RUN apt-get update \
     unzip \
     gzip \
     postgresql-client \
-    nodejs \
-    npm \
     lsb-release \
   && rm -rf /var/lib/apt/lists/*
+
+# Node.js (Vite requires >=20.19). Install Node 22.x from NodeSource.
+RUN set -eux; \
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends nodejs; \
+  rm -rf /var/lib/apt/lists/*
 
 # Docker CLI (outside-of-docker / docker-sock) support.
 # Install ONLY the client bits (no daemon) from Docker's official apt repo:
