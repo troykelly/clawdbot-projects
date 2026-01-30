@@ -65,16 +65,15 @@ services:
       retries: 10
 
   migrate:
-    image: migrate/migrate:v4.18.3
+    build:
+      context: .
+      dockerfile: docker/migrate/Dockerfile
     container_name: clawdbot-projects-migrate
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-clawdbot}:${POSTGRES_PASSWORD:-clawdbot}@postgres:5432/${POSTGRES_DB:-clawdbot}?sslmode=disable
-    volumes:
-      - ./migrations:/migrations:ro
-    entrypoint: ["migrate"]
     command:
       - -path
       - /migrations

@@ -14,7 +14,23 @@ RUN apt-get update \
     postgresql-client \
     nodejs \
     npm \
+    docker.io \
   && rm -rf /var/lib/apt/lists/*
+
+# Install Docker Compose v2 plugin so `docker compose` works inside the devcontainer.
+# (Ubuntu packages don't always include docker-compose-plugin.)
+ARG DOCKER_COMPOSE_VERSION=v2.27.1
+RUN set -eux; \
+  arch="$(uname -m)"; \
+  case "$arch" in \
+    x86_64) compose_arch="x86_64" ;; \
+    aarch64|arm64) compose_arch="aarch64" ;; \
+    *) echo "Unsupported arch: $arch"; exit 1 ;; \
+  esac; \
+  mkdir -p /usr/local/lib/docker/cli-plugins; \
+  curl -fsSL "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-linux-${compose_arch}" \
+    -o /usr/local/lib/docker/cli-plugins/docker-compose; \
+  chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
 # Ensure pnpm exists even when host mounts are not present.
 RUN npm install -g pnpm
