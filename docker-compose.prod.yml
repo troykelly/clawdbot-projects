@@ -26,7 +26,7 @@ services:
       - -c
       - cron.database_name=${POSTGRES_DB:-clawdbot}
     volumes:
-      - postgres_data:/var/lib/postgresql
+      - /var/project/data/clawdbot-projects/postgres:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -54,6 +54,18 @@ services:
       PGUSER: ${POSTGRES_USER:-clawdbot}
       PGPASSWORD: ${POSTGRES_PASSWORD:-clawdbot}
       PGDATABASE: ${POSTGRES_DB:-clawdbot}
+
+      # Email (Postmark)
+      POSTMARK_FROM: ${POSTMARK_FROM:-}
+      POSTMARK_REPLY_TO: ${POSTMARK_REPLY_TO:-}
+      POSTMARK_MESSAGE_STREAM: ${POSTMARK_MESSAGE_STREAM:-outbound}
+      POSTMARK_TRANSACTIONAL_TOKEN_FILE: ${POSTMARK_TRANSACTIONAL_TOKEN_FILE:-/run/secrets/postmark_transactional_token}
+      POSTMARK_BROADCAST_TOKEN_FILE: ${POSTMARK_BROADCAST_TOKEN_FILE:-/run/secrets/postmark_broadcast_token}
+
+    volumes:
+      - /home/moltbot/.postmark_transactional_token:/run/secrets/postmark_transactional_token:ro
+      - /home/moltbot/.postmark_broadcast_token:/run/secrets/postmark_broadcast_token:ro
+
     # Expose the service for Traefik/file-provider usage.
     # For a docker-provider Traefik setup, remove the host mapping and use a shared network + labels.
     ports:
@@ -81,6 +93,3 @@ services:
       - postgresql://${POSTGRES_USER:-clawdbot}:${POSTGRES_PASSWORD:-clawdbot}@postgres:5432/${POSTGRES_DB:-clawdbot}?sslmode=disable
       - up
     restart: "no"
-
-volumes:
-  postgres_data:
