@@ -18,6 +18,12 @@ jobs:
         run: |
           docker compose -f .devcontainer/docker-compose.devcontainer.yml up -d --build
 
+      - name: Fix workspace permissions (CI)
+        run: |
+          # GitHub Actions checks out the repo as a different uid than the devcontainer's default user (vscode).
+          # The bind mount ends up non-writable for vscode, causing EACCES when tools create temp files in the repo.
+          docker compose -f .devcontainer/docker-compose.devcontainer.yml exec -T -u root workspace bash -lc "chown -R vscode:vscode /workspaces/clawdbot-projects"
+
       - name: Install deps + run tests
         run: |
           docker compose -f .devcontainer/docker-compose.devcontainer.yml exec -T workspace bash -lc "cd /workspaces/clawdbot-projects && pnpm install --frozen-lockfile"

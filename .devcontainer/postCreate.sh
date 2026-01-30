@@ -4,6 +4,7 @@ set -euo pipefail
 log() { echo "[postCreate] $*"; }
 
 # Ensure common user-local paths are available for this session.
+mkdir -p "$HOME/.local/bin"
 export PATH="$HOME/.claude/bin:$HOME/.local/bin:$PATH"
 
 log "Starting devcontainer postCreate setup..."
@@ -28,7 +29,7 @@ install_claude_code() {
   log "Installing Claude Code via official installer (https://claude.ai/install.sh)"
   curl -fsSL https://claude.ai/install.sh | bash
 
-  export PATH="$HOME/.claude/bin:$PATH"
+  export PATH="$HOME/.claude/bin:$HOME/.local/bin:$PATH"
 
   if command -v claude >/dev/null 2>&1; then
     log "Claude Code installed: $(claude --version 2>/dev/null || true)"
