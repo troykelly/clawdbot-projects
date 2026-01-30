@@ -93,14 +93,49 @@ function WorkItemsListPage(): React.JSX.Element {
   );
 }
 
+type AppBootstrap = {
+  route?: { kind?: string; id?: string };
+  workItem?: { id?: string; title?: string } | null;
+  participants?: Array<{ participant?: string; role?: string }>;
+};
+
+function readBootstrap(): AppBootstrap | null {
+  const el = document.getElementById('app-bootstrap');
+  if (!el) return null;
+  const text = el.textContent;
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text) as AppBootstrap;
+  } catch {
+    return null;
+  }
+}
+
 function WorkItemDetailPage(props: { id: string }): React.JSX.Element {
+  const bootstrap = readBootstrap();
+  const title = bootstrap?.workItem?.title;
+  const participants = bootstrap?.participants ?? [];
+
   return (
     <main style={{ padding: 16 }}>
       <p>
         <a href="/app/work-items">← Back</a>
       </p>
-      <h1>Work item {props.id}</h1>
-      <p>(detail page TBD)</p>
+      <h1>{title ? title : `Work item ${props.id}`}</h1>
+
+      <h2>Participants</h2>
+      {participants.length === 0 ? (
+        <p>None</p>
+      ) : (
+        <ul>
+          {participants.map((p, idx) => (
+            <li key={idx}>
+              {p.participant ?? 'unknown'} {p.role ? `(${p.role})` : ''}
+            </li>
+          ))}
+        </ul>
+      )}
     </main>
   );
 }
