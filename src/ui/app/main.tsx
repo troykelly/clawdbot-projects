@@ -60,9 +60,59 @@ function WorkItemsListPage(): React.JSX.Element {
     };
   }, []);
 
+  const [newTitle, setNewTitle] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  const [createStatus, setCreateStatus] = useState<string | null>(null);
+
+  async function createWorkItem(): Promise<void> {
+    setCreateStatus(null);
+    const title = newTitle.trim();
+    if (!title) {
+      setCreateStatus('Title is required');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/work-items', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({ title, description: newDescription.trim() || null }),
+      });
+      if (!res.ok) throw new Error(`POST /api/work-items failed: ${res.status}`);
+
+      const created = (await res.json()) as { id: string };
+      window.location.href = `/app/work-items/${encodeURIComponent(created.id)}`;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setCreateStatus(message);
+    }
+  }
+
   return (
     <main style={{ padding: 16 }}>
       <h1>Work items</h1>
+
+      <section style={{ marginBottom: 16 }}>
+        <h2 style={{ margin: '12px 0 8px' }}>New work item</h2>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <input
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder="Title"
+            style={{ flex: '1 1 320px', padding: 6 }}
+          />
+          <input
+            value={newDescription}
+            onChange={(e) => setNewDescription(e.target.value)}
+            placeholder="Description (optional)"
+            style={{ flex: '2 1 420px', padding: 6 }}
+          />
+          <button type="button" onClick={() => void createWorkItem()}>
+            Create
+          </button>
+        </div>
+        {createStatus ? <p style={{ color: 'crimson' }}>{createStatus}</p> : null}
+      </section>
 
       {state.kind === 'loading' ? <p>Loading…</p> : null}
       {state.kind === 'error' ? <p style={{ color: 'crimson' }}>Error: {state.message}</p> : null}
