@@ -15,6 +15,8 @@
     "migrate:down:all": "migrate -path migrations -database \"$DATABASE_URL\" down",
     "css:build": "tailwindcss -c tailwind.config.ts -i ./src/ui/app.css -o ./src/api/static/app.css",
     "css:watch": "tailwindcss -c tailwind.config.ts -i ./src/ui/app.css -o ./src/api/static/app.css --watch",
+    "app:build": "vite build",
+    "app:dev": "vite",
     "api:dev": "tsx src/api/run.ts"
   },
   "keywords": [],
@@ -23,11 +25,15 @@
   "packageManager": "pnpm@10.28.1",
   "devDependencies": {
     "@types/node": "^25.0.10",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.2",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
+    "vite": "^7.3.1",
     "vitest": "^4.0.18"
   },
   "dependencies": {
@@ -35,6 +41,8 @@
     "@fastify/static": "^9.0.0",
     "@types/pg": "^8.16.0",
     "fastify": "^5.7.2",
-    "pg": "^8.17.2"
+    "pg": "^8.17.2",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
   }
 }
