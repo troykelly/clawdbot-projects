@@ -835,12 +835,62 @@ app.delete('/api/work-items/:id', async (req, reply) => {
       return reply.code(400).send({ error: 'dependsOnWorkItemId is required' });
     }
 
+    const dependsOnWorkItemId = body.dependsOnWorkItemId;
+
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    if (!uuidRe.test(dependsOnWorkItemId)) {
+      return reply.code(400).send({ error: 'dependsOnWorkItemId must be a UUID' });
+    }
+
+    if (dependsOnWorkItemId === params.id) {
+      return reply.code(400).send({ error: 'dependency cannot reference itself' });
+    }
+
+    const kind = body.kind ?? 'depends_on';
+
     const pool = createPool();
+
+    // Ensure both nodes exist so we can return a 4xx instead of relying on FK errors.
+    const a = await pool.query(`SELECT 1 FROM work_item WHERE id = $1`, [params.id]);
+    if (a.rows.length === 0) {
+      await pool.end();
+      return reply.code(404).send({ error: 'not found' });
+    }
+
+    const b = await pool.query(`SELECT 1 FROM work_item WHERE id = $1`, [dependsOnWorkItemId]);
+    if (b.rows.length === 0) {
+      await pool.end();
+      return reply.code(400).send({ error: 'dependsOn work item not found' });
+    }
+
+    // Reject cycles for ordering/precedence relationships.
+    const cycle = await pool.query(
+      `WITH RECURSIVE walk(id) AS (
+         SELECT depends_on_work_item_id
+           FROM work_item_dependency
+          WHERE work_item_id = $1
+            AND kind = $3
+         UNION
+         SELECT dep.depends_on_work_item_id
+           FROM work_item_dependency dep
+           JOIN walk w ON w.id = dep.work_item_id
+          WHERE dep.kind = $3
+       )
+       SELECT 1 FROM walk WHERE id = $2 LIMIT 1`,
+      [dependsOnWorkItemId, params.id, kind]
+    );
+
+    if (cycle.rows.length > 0) {
+      await pool.end();
+      return reply.code(400).send({ error: 'dependency would create a cycle' });
+    }
+
     const result = await pool.query(
       `INSERT INTO work_item_dependency (work_item_id, depends_on_work_item_id, kind)
        VALUES ($1, $2, $3)
        RETURNING id::text as id, work_item_id::text as work_item_id, depends_on_work_item_id::text as depends_on_work_item_id, kind`,
-      [params.id, body.dependsOnWorkItemId, body.kind ?? 'depends_on']
+      [params.id, dependsOnWorkItemId, kind]
     );
     await pool.end();
 
