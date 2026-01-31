@@ -79,8 +79,10 @@ describe('Backend API service', () => {
   it('supports dependencies + participants CRUD', async () => {
     const a = await app.inject({ method: 'POST', url: '/api/work-items', payload: { title: 'A' } });
     const b = await app.inject({ method: 'POST', url: '/api/work-items', payload: { title: 'B' } });
+    const c = await app.inject({ method: 'POST', url: '/api/work-items', payload: { title: 'C' } });
     const aId = (a.json() as { id: string }).id;
     const bId = (b.json() as { id: string }).id;
+    const cId = (c.json() as { id: string }).id;
 
     const dep = await app.inject({
       method: 'POST',
@@ -89,6 +91,21 @@ describe('Backend API service', () => {
     });
     expect(dep.statusCode).toBe(201);
     const depId = (dep.json() as { id: string }).id;
+
+    const dep2 = await app.inject({
+      method: 'POST',
+      url: `/api/work-items/${cId}/dependencies`,
+      payload: { dependsOnWorkItemId: bId, kind: 'depends_on' },
+    });
+    expect(dep2.statusCode).toBe(201);
+
+    // Reject cycles: if C -> B -> A, then A cannot depend on C.
+    const cycle = await app.inject({
+      method: 'POST',
+      url: `/api/work-items/${aId}/dependencies`,
+      payload: { dependsOnWorkItemId: cId, kind: 'depends_on' },
+    });
+    expect(cycle.statusCode).toBe(400);
 
     const deps = await app.inject({ method: 'GET', url: `/api/work-items/${bId}/dependencies` });
     expect(deps.statusCode).toBe(200);
