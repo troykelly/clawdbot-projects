@@ -84,6 +84,18 @@ async function applySql(pool: Pool, file: string): Promise<void> {
   await pool.query(sql);
 }
 
+function findSqlByVersion(version: number, direction: 'up' | 'down'): string | undefined {
+  const raw = readdirSync(migrationsPath);
+  const candidates = [String(version), String(version).padStart(3, '0')];
+
+  for (const prefix of candidates) {
+    const match = raw.find((f) => f.startsWith(`${prefix}_`) && f.endsWith(`.${direction}.sql`));
+    if (match) return resolve(migrationsPath, match);
+  }
+
+  return undefined;
+}
+
 /**
  * Apply or rollback migrations without depending on the external `migrate` binary.
  *
@@ -132,11 +144,13 @@ export async function runMigrate(direction: 'up' | 'down', steps?: number): Prom
       let count = 0;
       for (const r of toRollback) {
         const m = migrations.find((x) => x.version === r.version);
-        if (!m) throw new Error(`No migration files found for version ${r.version}`);
+        const downPath = m?.downPath || findSqlByVersion(r.version, 'down');
+
+        if (!downPath) throw new Error(`No migration files found for version ${r.version}`);
 
         await pool.query('BEGIN');
         try {
-          await applySql(pool, m.downPath);
+          await applySql(pool, downPath);
           await pool.query('DELETE FROM schema_migrations WHERE version = $1', [r.version]);
           await pool.query('COMMIT');
         } catch (e) {
