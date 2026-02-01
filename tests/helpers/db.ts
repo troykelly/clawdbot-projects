@@ -46,6 +46,9 @@ const APPLICATION_TABLES = [
   'work_item_participant',
   'notification',
   'notification_preference',
+  'work_item_comment_reaction',
+  'work_item_comment',
+  'user_presence',
   // Async/queue tables (no FKs today, but still want consistent cleanup)
   'webhook_outbox',
   'internal_job',
