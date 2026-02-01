@@ -5,7 +5,7 @@ Use this template for autonomous work on an epic - a group of related issues tha
 ## Command
 
 ```bash
-/ralph-loop "
+/ralph-loop:ralph-loop "
 ## Epic: <EPIC TITLE>
 
 ### Overview

@@ -5,7 +5,7 @@ Use this template for autonomous work on an iteration - a large initiative spann
 ## Command
 
 ```bash
-/ralph-loop "
+/ralph-loop:ralph-loop "
 ## Iteration: <ITERATION NAME>
 
 ### Goal

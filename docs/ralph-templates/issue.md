@@ -5,7 +5,7 @@ Use this template for autonomous work on a single GitHub issue.
 ## Command
 
 ```bash
-/ralph-loop "
+/ralph-loop:ralph-loop "
 ## Issue: #<NUMBER> - <TITLE>
 
 ### Context
