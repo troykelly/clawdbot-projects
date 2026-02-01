@@ -27,7 +27,7 @@ describe('/dashboard UI', () => {
     const res = await app.inject({ method: 'GET', url: '/dashboard' });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toMatch(/text\/html/);
-    expect(res.body).toContain('Dashboard login');
+    expect(res.body).toContain('Sign in');
 
     // UI foundation: shared app shell + stylesheet is always present.
     expect(res.body).toContain('href="/static/app.css"');
@@ -35,7 +35,7 @@ describe('/dashboard UI', () => {
 
     const res2 = await app.inject({ method: 'GET', url: '/dashboard/work-items' });
     expect(res2.statusCode).toBe(200);
-    expect(res2.body).toContain('Dashboard login');
+    expect(res2.body).toContain('Sign in');
   });
 
   it('shows dashboard when authenticated', async () => {

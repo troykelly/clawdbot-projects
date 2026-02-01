@@ -51,7 +51,7 @@ describe('/app work item detail', () => {
   it('shows login UI when not authenticated', async () => {
     const res = await app.inject({ method: 'GET', url: '/app/work-items/abc' });
     expect(res.statusCode).toBe(200);
-    expect(res.body).toContain('Dashboard login');
+    expect(res.body).toContain('Sign in');
   });
 
   it('renders work item detail HTML containing title and a participant when authenticated', async () => {

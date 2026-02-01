@@ -58,45 +58,159 @@ function baseScript() {
 }
 
 export function renderLogin(): string {
-  return renderShell({
-    title: 'clawdbot-projects login',
-    mainHtml: `
-      <div class="mx-auto max-w-xl">
-        <h1 class="text-2xl font-semibold tracking-tight">Dashboard login</h1>
-        <p class="mt-2 text-sm text-muted-foreground">Request a magic link (15 minutes). Check your email for the sign-in link.</p>
-
-        <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
-          <label class="sr-only" for="email">Email</label>
-          <input id="email" placeholder="you@example.com" class="h-10 w-full rounded-md border bg-background px-3 text-sm shadow-sm" />
-          <button id="send" class="h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm hover:opacity-90">Request login link</button>
-        </div>
-
-        <pre id="out" class="mt-4 whitespace-pre-wrap rounded-md border bg-muted p-3 text-xs text-muted-foreground"></pre>
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in - clawdbot-projects</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body class="min-h-screen" style="background-color: var(--color-background); color: var(--color-foreground); font-family: var(--font-sans);">
+  <div data-testid="app-shell" class="flex min-h-screen flex-col items-center justify-center px-4">
+    <div class="w-full max-w-md">
+      <!-- Logo / Branding -->
+      <div class="mb-8 text-center">
+        <h1 class="text-3xl font-bold tracking-tight" style="color: var(--color-foreground);">clawdbot</h1>
+        <p class="mt-2 text-sm" style="color: var(--color-muted-foreground);">Human-Agent Collaboration Workspace</p>
       </div>
 
-      <script>
-        document.getElementById('send').addEventListener('click', async () => {
-          const email = document.getElementById('email').value;
-          const res = await fetch('/api/auth/request-link', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ email })
-          });
-          const out = document.getElementById('out');
-          if (!res.ok) {
-            out.textContent = 'Failed: ' + (await res.text());
-            return;
-          }
-          const data = await res.json();
-          if (data.loginUrl) {
-            out.innerHTML = 'Login link: <a class="underline" href="' + data.loginUrl + '">' + data.loginUrl + '</a>';
-          } else {
-            out.textContent = 'If that email exists, a login link has been sent.';
-          }
+      <!-- Card -->
+      <div class="rounded-lg border p-6 shadow-sm" style="background-color: var(--color-surface); border-color: var(--color-border);">
+        <div class="mb-6">
+          <h2 class="text-xl font-semibold tracking-tight" style="color: var(--color-foreground);">Sign in</h2>
+          <p class="mt-1 text-sm" style="color: var(--color-muted-foreground);">Enter your email to receive a magic link.</p>
+        </div>
+
+        <div class="space-y-4">
+          <div>
+            <label class="sr-only" for="email">Email address</label>
+            <input
+              id="email"
+              type="email"
+              placeholder="you@example.com"
+              autocomplete="email"
+              class="h-10 w-full rounded-md border px-3 text-sm transition-colors focus:outline-none focus:ring-2"
+              style="background-color: var(--color-background); border-color: var(--color-border); color: var(--color-foreground);"
+              onfocus="this.style.borderColor='var(--color-ring)'; this.style.boxShadow='0 0 0 2px rgba(99, 102, 241, 0.2)';"
+              onblur="this.style.borderColor='var(--color-border)'; this.style.boxShadow='none';"
+            />
+          </div>
+
+          <button
+            id="send"
+            class="h-10 w-full rounded-md text-sm font-medium transition-opacity hover:opacity-90 focus:outline-none focus:ring-2"
+            style="background-color: var(--color-primary); color: var(--color-primary-foreground);"
+          >
+            Send magic link
+          </button>
+        </div>
+
+        <!-- Status message -->
+        <div id="out" class="mt-4 rounded-md border p-3 text-sm hidden" style="background-color: var(--color-muted); border-color: var(--color-border); color: var(--color-muted-foreground);">
+          <span id="outText"></span>
+          <a id="outLink" href="#" class="underline hidden" style="color: var(--color-primary);"></a>
+        </div>
+
+        <!-- Error message -->
+        <div id="error" class="mt-4 rounded-md border p-3 text-sm hidden" style="background-color: rgba(239, 68, 68, 0.1); border-color: var(--color-error); color: var(--color-error);"></div>
+
+        <!-- Success message -->
+        <div id="success" class="mt-4 rounded-md border p-3 text-sm hidden" style="background-color: rgba(34, 197, 94, 0.1); border-color: var(--color-success); color: var(--color-success);"></div>
+      </div>
+
+      <!-- Footer -->
+      <p class="mt-6 text-center text-xs" style="color: var(--color-muted-foreground);">
+        The link will expire in 15 minutes.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    const btn = document.getElementById('send');
+    const input = document.getElementById('email');
+    const outEl = document.getElementById('out');
+    const outText = document.getElementById('outText');
+    const outLink = document.getElementById('outLink');
+    const errorEl = document.getElementById('error');
+    const successEl = document.getElementById('success');
+
+    function hideMessages() {
+      outEl.classList.add('hidden');
+      outLink.classList.add('hidden');
+      errorEl.classList.add('hidden');
+      successEl.classList.add('hidden');
+    }
+
+    function showSuccess(message) {
+      hideMessages();
+      successEl.textContent = message;
+      successEl.classList.remove('hidden');
+    }
+
+    function showError(message) {
+      hideMessages();
+      errorEl.textContent = message;
+      errorEl.classList.remove('hidden');
+    }
+
+    function showLoginUrl(url) {
+      hideMessages();
+      outText.textContent = 'Login link: ';
+      outLink.href = url;
+      outLink.textContent = url;
+      outLink.classList.remove('hidden');
+      outEl.classList.remove('hidden');
+    }
+
+    async function requestLink() {
+      const email = input.value.trim();
+      if (!email) {
+        showError('Please enter your email address.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+      btn.style.opacity = '0.7';
+
+      try {
+        const res = await fetch('/api/auth/request-link', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email })
         });
-      </script>
-    `,
-  });
+
+        if (!res.ok) {
+          showError('Failed to send link. Please try again.');
+          return;
+        }
+
+        const data = await res.json();
+        if (data.loginUrl) {
+          showLoginUrl(data.loginUrl);
+        } else {
+          showSuccess('If that email is registered, a sign-in link has been sent. Check your inbox.');
+        }
+      } catch (err) {
+        showError('Network error. Please check your connection and try again.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Send magic link';
+        btn.style.opacity = '1';
+      }
+    }
+
+    btn.addEventListener('click', requestLink);
+    input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') requestLink();
+    });
+  </script>
+</body>
+</html>`;
 }
 
 export function renderDashboardHome({ email }: DashboardPageOptions): string {
