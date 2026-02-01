@@ -38,6 +38,7 @@ const APPLICATION_TABLES = [
   // FK children first
   'work_item_external_link',
   'work_item_communication',
+  'work_item_contact',
   'external_message',
   'external_thread',
   'contact_endpoint',
