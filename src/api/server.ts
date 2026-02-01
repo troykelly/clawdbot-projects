@@ -530,6 +530,115 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
     return reply.send({ items: result.rows });
   });
 
+  // Work Items Tree API (issue #145)
+  app.get('/api/work-items/tree', async (req, reply) => {
+    const query = req.query as { root_id?: string; depth?: string };
+    const maxDepth = Math.min(parseInt(query.depth || '10', 10), 20);
+
+    const pool = createPool();
+
+    // If root_id is specified, check it exists
+    if (query.root_id) {
+      const exists = await pool.query('SELECT 1 FROM work_item WHERE id = $1', [query.root_id]);
+      if (exists.rows.length === 0) {
+        await pool.end();
+        return reply.code(404).send({ error: 'root not found' });
+      }
+    }
+
+    // Get all items with their children count using a recursive CTE
+    const result = await pool.query(
+      `WITH RECURSIVE tree AS (
+         -- Base case: root items (or specific root if provided)
+         SELECT wi.id,
+                wi.title,
+                wi.work_item_kind as kind,
+                wi.status,
+                wi.priority::text as priority,
+                wi.parent_work_item_id,
+                0 as level
+           FROM work_item wi
+          WHERE ${query.root_id ? 'wi.id = $1' : 'wi.parent_work_item_id IS NULL'}
+         UNION ALL
+         -- Recursive case: children
+         SELECT wi.id,
+                wi.title,
+                wi.work_item_kind as kind,
+                wi.status,
+                wi.priority::text as priority,
+                wi.parent_work_item_id,
+                t.level + 1
+           FROM work_item wi
+           JOIN tree t ON wi.parent_work_item_id = t.id
+          WHERE t.level < $${query.root_id ? '2' : '1'}
+       )
+       SELECT t.id::text as id,
+              t.title,
+              t.kind,
+              t.status,
+              t.priority,
+              t.parent_work_item_id::text as parent_id,
+              t.level,
+              (SELECT COUNT(*) FROM work_item c WHERE c.parent_work_item_id = t.id) as children_count
+         FROM tree t
+        ORDER BY t.level, t.title`,
+      query.root_id ? [query.root_id, maxDepth] : [maxDepth]
+    );
+
+    // Build hierarchical structure
+    type TreeItem = {
+      id: string;
+      title: string;
+      kind: string;
+      status: string;
+      priority: string;
+      parent_id: string | null;
+      level: number;
+      children_count: number;
+      children: TreeItem[];
+    };
+
+    const itemMap = new Map<string, TreeItem>();
+    const rootItems: TreeItem[] = [];
+
+    for (const row of result.rows) {
+      const r = row as {
+        id: string;
+        title: string;
+        kind: string;
+        status: string;
+        priority: string;
+        parent_id: string | null;
+        level: number;
+        children_count: string;
+      };
+
+      const item: TreeItem = {
+        id: r.id,
+        title: r.title,
+        kind: r.kind,
+        status: r.status,
+        priority: r.priority,
+        parent_id: r.parent_id,
+        level: r.level,
+        children_count: parseInt(r.children_count, 10),
+        children: [],
+      };
+
+      itemMap.set(r.id, item);
+
+      if (r.level === 0) {
+        rootItems.push(item);
+      } else if (r.parent_id && itemMap.has(r.parent_id)) {
+        const parent = itemMap.get(r.parent_id);
+        parent?.children.push(item);
+      }
+    }
+
+    await pool.end();
+    return reply.send({ items: rootItems });
+  });
+
   app.get('/api/backlog', async (req, reply) => {
     const query = req.query as {
       status?: string | string[];
