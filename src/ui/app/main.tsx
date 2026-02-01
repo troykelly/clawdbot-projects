@@ -6,6 +6,9 @@ import { createRoot } from 'react-dom/client';
 import { AppShell } from '@/ui/components/layout/app-shell';
 import type { BreadcrumbItem } from '@/ui/components/layout/breadcrumb';
 
+// Command Palette
+import { CommandPalette, SearchResult } from '@/ui/components/command-palette';
+
 // Feedback components
 import {
   Skeleton,
@@ -2416,15 +2419,88 @@ function App(): React.JSX.Element {
     return <NotFoundPage path={route.path} />;
   };
 
+  // Search handler for command palette
+  const handleSearch = useCallback(async (query: string): Promise<SearchResult[]> => {
+    try {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(query)}&limit=10`, {
+        headers: { accept: 'application/json' },
+      });
+      if (!res.ok) throw new Error('Search failed');
+      const data = (await res.json()) as {
+        results: Array<{
+          type: string;
+          id: string;
+          title: string;
+          description: string;
+          url: string;
+        }>;
+      };
+      return data.results.map((r) => ({
+        id: r.id,
+        type: r.type === 'work_item' ? 'issue' : r.type === 'contact' ? 'contact' : 'issue',
+        title: r.title,
+        subtitle: r.description?.slice(0, 80) || undefined,
+        href: r.url,
+      }));
+    } catch {
+      return [];
+    }
+  }, []);
+
+  // Handle search result selection
+  const handleSearchSelect = useCallback((result: SearchResult | string) => {
+    if (typeof result === 'string') {
+      // Handle actions like 'create-issue', 'create-project'
+      if (result === 'create-issue') {
+        // Could open a create dialog - for now navigate to list
+        window.location.href = '/app/work-items';
+      } else if (result === 'create-project') {
+        window.location.href = '/app/work-items';
+      }
+    } else if (result.href) {
+      window.location.href = result.href;
+    } else {
+      // Navigate based on type
+      window.location.href = `/app/work-items/${result.id}`;
+    }
+  }, []);
+
+  // Handle navigation from command palette
+  const handleNavigate = useCallback((section: string) => {
+    switch (section) {
+      case 'activity':
+        window.location.href = '/app/activity';
+        break;
+      case 'projects':
+        window.location.href = '/app/work-items';
+        break;
+      case 'timeline':
+        window.location.href = '/app/timeline';
+        break;
+      case 'people':
+        window.location.href = '/app/contacts';
+        break;
+      default:
+        window.location.href = '/app/work-items';
+    }
+  }, []);
+
   return (
-    <AppShell
-      activeSection={activeSection}
-      onSectionChange={handleSectionChange}
-      breadcrumbs={breadcrumbs}
-      onHomeClick={() => { window.location.href = '/app/work-items'; }}
-    >
-      {renderContent()}
-    </AppShell>
+    <>
+      <CommandPalette
+        onSearch={handleSearch}
+        onSelect={handleSearchSelect}
+        onNavigate={handleNavigate}
+      />
+      <AppShell
+        activeSection={activeSection}
+        onSectionChange={handleSectionChange}
+        breadcrumbs={breadcrumbs}
+        onHomeClick={() => { window.location.href = '/app/work-items'; }}
+      >
+        {renderContent()}
+      </AppShell>
+    </>
   );
 }
 
