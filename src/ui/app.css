@@ -155,4 +155,45 @@
   .danger:hover {
     opacity: 0.9;
   }
+
+  /* Skeleton wave animation */
+  .skeleton-wave {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .skeleton-wave::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.2),
+      transparent
+    );
+    animation: skeleton-wave 1.5s infinite;
+  }
+
+  @keyframes skeleton-wave {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  /* Reduced motion support */
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton-wave::after {
+      animation: none;
+    }
+
+    .animate-pulse {
+      animation: none;
+    }
+
+    .animate-spin {
+      animation: none;
+    }
+  }
 }
