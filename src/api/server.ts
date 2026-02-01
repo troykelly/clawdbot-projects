@@ -4667,5 +4667,344 @@ app.delete('/api/work-items/:id', async (req, reply) => {
     return reply.send({ success: true });
   });
 
+  // ===== Comments & Presence API (Issue #182) =====
+
+  // GET /api/work-items/:id/comments - List comments for a work item
+  app.get('/api/work-items/:id/comments', async (req, reply) => {
+    const params = req.params as { id: string };
+    const pool = createPool();
+
+    // Check if work item exists
+    const workItemExists = await pool.query('SELECT 1 FROM work_item WHERE id = $1', [params.id]);
+    if (workItemExists.rows.length === 0) {
+      await pool.end();
+      return reply.code(404).send({ error: 'not found' });
+    }
+
+    // Get comments with reactions
+    const comments = await pool.query(
+      `SELECT
+         c.id::text as id,
+         c.work_item_id::text as "workItemId",
+         c.parent_id::text as "parentId",
+         c.user_email as "userEmail",
+         c.content,
+         c.mentions,
+         c.edited_at as "editedAt",
+         c.created_at as "createdAt",
+         c.updated_at as "updatedAt"
+       FROM work_item_comment c
+       WHERE c.work_item_id = $1
+       ORDER BY c.created_at ASC`,
+      [params.id]
+    );
+
+    // Get reactions for all comments
+    const commentIds = comments.rows.map((c) => c.id);
+    let reactionsMap: Record<string, Record<string, number>> = {};
+
+    if (commentIds.length > 0) {
+      const reactions = await pool.query(
+        `SELECT comment_id::text, emoji, COUNT(*) as count
+         FROM work_item_comment_reaction
+         WHERE comment_id = ANY($1::uuid[])
+         GROUP BY comment_id, emoji`,
+        [commentIds]
+      );
+
+      for (const r of reactions.rows) {
+        if (!reactionsMap[r.comment_id]) {
+          reactionsMap[r.comment_id] = {};
+        }
+        reactionsMap[r.comment_id][r.emoji] = parseInt(r.count, 10);
+      }
+    }
+
+    await pool.end();
+
+    const commentsWithReactions = comments.rows.map((c) => ({
+      ...c,
+      reactions: reactionsMap[c.id] || {},
+    }));
+
+    return reply.send({ comments: commentsWithReactions });
+  });
+
+  // POST /api/work-items/:id/comments - Create a new comment
+  app.post('/api/work-items/:id/comments', async (req, reply) => {
+    const params = req.params as { id: string };
+    const body = req.body as { userEmail: string; content: string; parentId?: string };
+
+    if (!body.userEmail || !body.content) {
+      return reply.code(400).send({ error: 'userEmail and content are required' });
+    }
+
+    const pool = createPool();
+
+    // Check if work item exists
+    const workItemExists = await pool.query('SELECT 1 FROM work_item WHERE id = $1', [params.id]);
+    if (workItemExists.rows.length === 0) {
+      await pool.end();
+      return reply.code(404).send({ error: 'not found' });
+    }
+
+    // Extract @mentions from content (email format)
+    const mentionRegex = /@([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
+    const mentions: string[] = [];
+    let match;
+    while ((match = mentionRegex.exec(body.content)) !== null) {
+      mentions.push(match[1]);
+    }
+
+    const result = await pool.query(
+      `INSERT INTO work_item_comment (work_item_id, user_email, content, parent_id, mentions)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING
+         id::text as id,
+         work_item_id::text as "workItemId",
+         parent_id::text as "parentId",
+         user_email as "userEmail",
+         content,
+         mentions,
+         created_at as "createdAt"`,
+      [params.id, body.userEmail, body.content, body.parentId || null, mentions]
+    );
+
+    await pool.end();
+
+    return reply.code(201).send(result.rows[0]);
+  });
+
+  // PUT /api/work-items/:id/comments/:commentId - Update a comment
+  app.put('/api/work-items/:id/comments/:commentId', async (req, reply) => {
+    const params = req.params as { id: string; commentId: string };
+    const body = req.body as { userEmail: string; content: string };
+
+    if (!body.userEmail || !body.content) {
+      return reply.code(400).send({ error: 'userEmail and content are required' });
+    }
+
+    const pool = createPool();
+
+    // Check ownership
+    const comment = await pool.query(
+      'SELECT user_email FROM work_item_comment WHERE id = $1 AND work_item_id = $2',
+      [params.commentId, params.id]
+    );
+
+    if (comment.rows.length === 0) {
+      await pool.end();
+      return reply.code(404).send({ error: 'not found' });
+    }
+
+    if (comment.rows[0].user_email !== body.userEmail) {
+      await pool.end();
+      return reply.code(403).send({ error: 'cannot edit other user comment' });
+    }
+
+    // Extract @mentions from content
+    const mentionRegex = /@([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
+    const mentions: string[] = [];
+    let match;
+    while ((match = mentionRegex.exec(body.content)) !== null) {
+      mentions.push(match[1]);
+    }
+
+    const result = await pool.query(
+      `UPDATE work_item_comment
+       SET content = $1, mentions = $2, edited_at = now()
+       WHERE id = $3
+       RETURNING
+         id::text as id,
+         content,
+         mentions,
+         edited_at as "editedAt",
+         updated_at as "updatedAt"`,
+      [body.content, mentions, params.commentId]
+    );
+
+    await pool.end();
+
+    return reply.send(result.rows[0]);
+  });
+
+  // DELETE /api/work-items/:id/comments/:commentId - Delete a comment
+  app.delete('/api/work-items/:id/comments/:commentId', async (req, reply) => {
+    const params = req.params as { id: string; commentId: string };
+    const query = req.query as { userEmail?: string };
+
+    if (!query.userEmail) {
+      return reply.code(400).send({ error: 'userEmail is required' });
+    }
+
+    const pool = createPool();
+
+    // Check ownership
+    const comment = await pool.query(
+      'SELECT user_email FROM work_item_comment WHERE id = $1 AND work_item_id = $2',
+      [params.commentId, params.id]
+    );
+
+    if (comment.rows.length === 0) {
+      await pool.end();
+      return reply.code(404).send({ error: 'not found' });
+    }
+
+    if (comment.rows[0].user_email !== query.userEmail) {
+      await pool.end();
+      return reply.code(403).send({ error: 'cannot delete other user comment' });
+    }
+
+    await pool.query('DELETE FROM work_item_comment WHERE id = $1', [params.commentId]);
+    await pool.end();
+
+    return reply.send({ success: true });
+  });
+
+  // POST /api/work-items/:id/comments/:commentId/reactions - Toggle a reaction
+  app.post('/api/work-items/:id/comments/:commentId/reactions', async (req, reply) => {
+    const params = req.params as { id: string; commentId: string };
+    const body = req.body as { userEmail: string; emoji: string };
+
+    if (!body.userEmail || !body.emoji) {
+      return reply.code(400).send({ error: 'userEmail and emoji are required' });
+    }
+
+    const pool = createPool();
+
+    // Check if comment exists
+    const commentExists = await pool.query(
+      'SELECT 1 FROM work_item_comment WHERE id = $1 AND work_item_id = $2',
+      [params.commentId, params.id]
+    );
+
+    if (commentExists.rows.length === 0) {
+      await pool.end();
+      return reply.code(404).send({ error: 'not found' });
+    }
+
+    // Check if reaction exists - if so, remove it (toggle)
+    const existing = await pool.query(
+      'SELECT 1 FROM work_item_comment_reaction WHERE comment_id = $1 AND user_email = $2 AND emoji = $3',
+      [params.commentId, body.userEmail, body.emoji]
+    );
+
+    if (existing.rows.length > 0) {
+      await pool.query(
+        'DELETE FROM work_item_comment_reaction WHERE comment_id = $1 AND user_email = $2 AND emoji = $3',
+        [params.commentId, body.userEmail, body.emoji]
+      );
+      await pool.end();
+      return reply.send({ action: 'removed' });
+    }
+
+    await pool.query(
+      `INSERT INTO work_item_comment_reaction (comment_id, user_email, emoji)
+       VALUES ($1, $2, $3)`,
+      [params.commentId, body.userEmail, body.emoji]
+    );
+
+    await pool.end();
+
+    return reply.code(201).send({ action: 'added' });
+  });
+
+  // GET /api/work-items/:id/presence - Get users currently viewing
+  app.get('/api/work-items/:id/presence', async (req, reply) => {
+    const params = req.params as { id: string };
+    const pool = createPool();
+
+    // Get users with recent presence (within 5 minutes)
+    const result = await pool.query(
+      `SELECT user_email as email, last_seen_at as "lastSeenAt", cursor_position as "cursorPosition"
+       FROM user_presence
+       WHERE work_item_id = $1 AND last_seen_at > now() - interval '5 minutes'
+       ORDER BY last_seen_at DESC`,
+      [params.id]
+    );
+
+    await pool.end();
+
+    return reply.send({ users: result.rows });
+  });
+
+  // POST /api/work-items/:id/presence - Update user presence
+  app.post('/api/work-items/:id/presence', async (req, reply) => {
+    const params = req.params as { id: string };
+    const body = req.body as { userEmail: string; cursorPosition?: object };
+
+    if (!body.userEmail) {
+      return reply.code(400).send({ error: 'userEmail is required' });
+    }
+
+    const pool = createPool();
+
+    await pool.query(
+      `INSERT INTO user_presence (user_email, work_item_id, last_seen_at, cursor_position)
+       VALUES ($1, $2, now(), $3)
+       ON CONFLICT (user_email, work_item_id) DO UPDATE SET
+         last_seen_at = now(),
+         cursor_position = COALESCE($3, user_presence.cursor_position)`,
+      [body.userEmail, params.id, body.cursorPosition ? JSON.stringify(body.cursorPosition) : null]
+    );
+
+    await pool.end();
+
+    return reply.send({ success: true });
+  });
+
+  // DELETE /api/work-items/:id/presence - Remove user presence
+  app.delete('/api/work-items/:id/presence', async (req, reply) => {
+    const params = req.params as { id: string };
+    const query = req.query as { userEmail?: string };
+
+    if (!query.userEmail) {
+      return reply.code(400).send({ error: 'userEmail is required' });
+    }
+
+    const pool = createPool();
+
+    await pool.query(
+      'DELETE FROM user_presence WHERE user_email = $1 AND work_item_id = $2',
+      [query.userEmail, params.id]
+    );
+
+    await pool.end();
+
+    return reply.send({ success: true });
+  });
+
+  // GET /api/users/search - Search users for @mention autocomplete
+  app.get('/api/users/search', async (req, reply) => {
+    const query = req.query as { q?: string; limit?: string };
+
+    if (!query.q) {
+      return reply.code(400).send({ error: 'q query parameter is required' });
+    }
+
+    const limit = Math.min(parseInt(query.limit || '10', 10), 50);
+    const pool = createPool();
+
+    // Search for users based on email from various sources
+    const result = await pool.query(
+      `SELECT DISTINCT email
+       FROM (
+         SELECT user_email as email FROM work_item_comment
+         UNION
+         SELECT user_email as email FROM notification
+         UNION
+         SELECT email FROM auth_session
+       ) users
+       WHERE email ILIKE $1
+       ORDER BY email
+       LIMIT $2`,
+      [`%${query.q}%`, limit]
+    );
+
+    await pool.end();
+
+    return reply.send({ users: result.rows });
+  });
+
   return app;
 }
