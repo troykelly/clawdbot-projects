@@ -5006,5 +5006,245 @@ app.delete('/api/work-items/:id', async (req, reply) => {
     return reply.send({ users: result.rows });
   });
 
+  // ===== Analytics API (Issue #183) =====
+
+  // GET /api/analytics/project-health - Get health metrics for projects
+  app.get('/api/analytics/project-health', async (req, reply) => {
+    const query = req.query as { projectId?: string };
+    const pool = createPool();
+
+    let projectFilter = '';
+    const params: string[] = [];
+
+    if (query.projectId) {
+      params.push(query.projectId);
+      projectFilter = 'AND p.id = $1';
+    }
+
+    const result = await pool.query(
+      `SELECT
+         p.id::text as id,
+         p.title,
+         COUNT(CASE WHEN c.status IN ('open', 'backlog', 'todo') THEN 1 END)::int as "openCount",
+         COUNT(CASE WHEN c.status IN ('in_progress', 'review') THEN 1 END)::int as "inProgressCount",
+         COUNT(CASE WHEN c.status IN ('closed', 'done', 'cancelled') THEN 1 END)::int as "closedCount",
+         COUNT(c.id)::int as "totalCount"
+       FROM work_item p
+       LEFT JOIN work_item c ON c.parent_work_item_id = p.id
+       WHERE p.work_item_kind = 'project'
+       ${projectFilter}
+       GROUP BY p.id, p.title
+       ORDER BY p.title`,
+      params
+    );
+
+    await pool.end();
+
+    return reply.send({ projects: result.rows });
+  });
+
+  // GET /api/analytics/velocity - Get velocity data
+  app.get('/api/analytics/velocity', async (req, reply) => {
+    const query = req.query as { weeks?: string; projectId?: string };
+    const weeks = Math.min(parseInt(query.weeks || '12', 10), 52);
+    const pool = createPool();
+
+    const result = await pool.query(
+      `SELECT
+         date_trunc('week', updated_at)::date as week_start,
+         COUNT(*)::int as completed_count,
+         SUM(COALESCE(estimate_minutes, 0))::int as estimated_minutes
+       FROM work_item
+       WHERE status IN ('closed', 'done')
+         AND updated_at >= now() - ($1 || ' weeks')::interval
+       GROUP BY date_trunc('week', updated_at)
+       ORDER BY week_start DESC`,
+      [weeks]
+    );
+
+    await pool.end();
+
+    return reply.send({
+      weeks: result.rows.map((r) => ({
+        weekStart: r.week_start,
+        completedCount: r.completed_count,
+        estimatedMinutes: r.estimated_minutes,
+      })),
+    });
+  });
+
+  // GET /api/analytics/effort - Get effort summary
+  app.get('/api/analytics/effort', async (req, reply) => {
+    const query = req.query as { projectId?: string };
+    const pool = createPool();
+
+    // Get total effort
+    const totalResult = await pool.query(
+      `SELECT
+         SUM(COALESCE(estimate_minutes, 0))::int as total_estimated,
+         SUM(COALESCE(actual_minutes, 0))::int as total_actual
+       FROM work_item`
+    );
+
+    // Get effort by status
+    const byStatusResult = await pool.query(
+      `SELECT
+         status,
+         SUM(COALESCE(estimate_minutes, 0))::int as estimated_minutes,
+         SUM(COALESCE(actual_minutes, 0))::int as actual_minutes,
+         COUNT(*)::int as item_count
+       FROM work_item
+       GROUP BY status
+       ORDER BY status`
+    );
+
+    await pool.end();
+
+    return reply.send({
+      totalEstimated: totalResult.rows[0]?.total_estimated || 0,
+      totalActual: totalResult.rows[0]?.total_actual || 0,
+      byStatus: byStatusResult.rows.map((r) => ({
+        status: r.status,
+        estimatedMinutes: r.estimated_minutes,
+        actualMinutes: r.actual_minutes,
+        itemCount: r.item_count,
+      })),
+    });
+  });
+
+  // GET /api/analytics/burndown/:id - Get burndown data for a work item
+  app.get('/api/analytics/burndown/:id', async (req, reply) => {
+    const params = req.params as { id: string };
+    const pool = createPool();
+
+    // Check if work item exists
+    const workItemExists = await pool.query('SELECT 1 FROM work_item WHERE id = $1', [params.id]);
+    if (workItemExists.rows.length === 0) {
+      await pool.end();
+      return reply.code(404).send({ error: 'not found' });
+    }
+
+    // Get scope totals for children
+    const result = await pool.query(
+      `SELECT
+         SUM(COALESCE(estimate_minutes, 0))::int as total_scope,
+         SUM(CASE WHEN status IN ('closed', 'done') THEN COALESCE(estimate_minutes, 0) ELSE 0 END)::int as completed_scope,
+         SUM(CASE WHEN status NOT IN ('closed', 'done', 'cancelled') THEN COALESCE(estimate_minutes, 0) ELSE 0 END)::int as remaining_scope,
+         COUNT(*)::int as total_items,
+         COUNT(CASE WHEN status IN ('closed', 'done') THEN 1 END)::int as completed_items
+       FROM work_item
+       WHERE parent_work_item_id = $1`,
+      [params.id]
+    );
+
+    await pool.end();
+
+    return reply.send({
+      totalScope: result.rows[0]?.total_scope || 0,
+      completedScope: result.rows[0]?.completed_scope || 0,
+      remainingScope: result.rows[0]?.remaining_scope || 0,
+      totalItems: result.rows[0]?.total_items || 0,
+      completedItems: result.rows[0]?.completed_items || 0,
+    });
+  });
+
+  // GET /api/analytics/overdue - Get overdue items
+  app.get('/api/analytics/overdue', async (req, reply) => {
+    const query = req.query as { limit?: string };
+    const limit = Math.min(parseInt(query.limit || '50', 10), 100);
+    const pool = createPool();
+
+    const result = await pool.query(
+      `SELECT
+         id::text as id,
+         title,
+         status,
+         priority,
+         work_item_kind as "workItemKind",
+         not_after as "dueDate",
+         (now() - not_after) as "overdueBy"
+       FROM work_item
+       WHERE not_after < now()
+         AND status NOT IN ('closed', 'done', 'cancelled')
+       ORDER BY not_after ASC
+       LIMIT $1`,
+      [limit]
+    );
+
+    await pool.end();
+
+    return reply.send({ items: result.rows });
+  });
+
+  // GET /api/analytics/blocked - Get blocked items
+  app.get('/api/analytics/blocked', async (req, reply) => {
+    const query = req.query as { limit?: string };
+    const limit = Math.min(parseInt(query.limit || '50', 10), 100);
+    const pool = createPool();
+
+    const result = await pool.query(
+      `SELECT
+         w.id::text as id,
+         w.title,
+         w.status,
+         w.priority,
+         w.work_item_kind as "workItemKind",
+         d.depends_on_work_item_id::text as "blockedById",
+         b.title as "blockedByTitle",
+         b.status as "blockedByStatus"
+       FROM work_item w
+       INNER JOIN work_item_dependency d ON d.work_item_id = w.id
+       INNER JOIN work_item b ON b.id = d.depends_on_work_item_id
+       WHERE d.kind = 'blocked_by'
+         AND w.status NOT IN ('closed', 'done', 'cancelled')
+         AND b.status NOT IN ('closed', 'done')
+       ORDER BY w.priority ASC, w.created_at ASC
+       LIMIT $1`,
+      [limit]
+    );
+
+    await pool.end();
+
+    return reply.send({ items: result.rows });
+  });
+
+  // GET /api/analytics/activity-summary - Get activity summary by day
+  app.get('/api/analytics/activity-summary', async (req, reply) => {
+    const query = req.query as { days?: string };
+    const days = Math.min(parseInt(query.days || '30', 10), 90);
+    const pool = createPool();
+
+    const result = await pool.query(
+      `SELECT
+         date_trunc('day', created_at)::date as day,
+         activity_type as type,
+         COUNT(*)::int as count
+       FROM work_item_activity
+       WHERE created_at >= now() - ($1 || ' days')::interval
+       GROUP BY date_trunc('day', created_at), activity_type
+       ORDER BY day DESC, activity_type`,
+      [days]
+    );
+
+    await pool.end();
+
+    // Group by day
+    const byDay: Record<string, Record<string, number>> = {};
+    for (const r of result.rows) {
+      const dayStr = r.day.toISOString().split('T')[0];
+      if (!byDay[dayStr]) {
+        byDay[dayStr] = {};
+      }
+      byDay[dayStr][r.type] = r.count;
+    }
+
+    const daysList = Object.entries(byDay).map(([day, counts]) => ({
+      day,
+      ...counts,
+    }));
+
+    return reply.send({ days: daysList });
+  });
+
   return app;
 }
