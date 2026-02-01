@@ -88,6 +88,21 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
   app.get('/health', async () => ({ ok: true }));
 
   // New frontend (issue #52). These routes are protected by the existing dashboard session cookie.
+  app.get('/app/kanban', async (req, reply) => {
+    const email = await requireDashboardSession(req, reply);
+    if (!email) return;
+
+    const bootstrap = {
+      route: { kind: 'kanban' },
+      me: { email },
+    };
+
+    return reply
+      .code(200)
+      .header('content-type', 'text/html; charset=utf-8')
+      .send(renderAppFrontendHtml(bootstrap));
+  });
+
   app.get('/app/work-items', async (req, reply) => {
     const email = await requireDashboardSession(req, reply);
     if (!email) return;
