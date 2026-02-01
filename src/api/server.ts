@@ -2263,6 +2263,123 @@ app.delete('/api/work-items/:id', async (req, reply) => {
     return reply.send({ work_items: result.rows });
   });
 
+  // Contact-WorkItem Linking API (issue #118)
+  // GET /api/work-items/:id/contacts - List contacts linked to a work item
+  app.get('/api/work-items/:id/contacts', async (req, reply) => {
+    const params = req.params as { id: string };
+    const pool = createPool();
+
+    // Check if work item exists
+    const exists = await pool.query('SELECT 1 FROM work_item WHERE id = $1', [params.id]);
+    if (exists.rows.length === 0) {
+      await pool.end();
+      return reply.code(404).send({ error: 'not found' });
+    }
+
+    const result = await pool.query(
+      `SELECT wic.contact_id::text as "contactId",
+              c.display_name as "displayName",
+              wic.relationship::text as relationship,
+              wic.created_at as "createdAt"
+         FROM work_item_contact wic
+         JOIN contact c ON c.id = wic.contact_id
+        WHERE wic.work_item_id = $1
+        ORDER BY wic.created_at ASC`,
+      [params.id]
+    );
+
+    await pool.end();
+    return reply.send({ contacts: result.rows });
+  });
+
+  // POST /api/work-items/:id/contacts - Link a contact to a work item
+  app.post('/api/work-items/:id/contacts', async (req, reply) => {
+    const params = req.params as { id: string };
+    const body = req.body as { contactId?: string; relationship?: string };
+
+    if (!body?.contactId) {
+      return reply.code(400).send({ error: 'contactId is required' });
+    }
+
+    if (!body?.relationship) {
+      return reply.code(400).send({ error: 'relationship is required' });
+    }
+
+    const validRelationships = ['owner', 'assignee', 'stakeholder', 'reviewer'];
+    if (!validRelationships.includes(body.relationship)) {
+      return reply
+        .code(400)
+        .send({ error: `relationship must be one of: ${validRelationships.join(', ')}` });
+    }
+
+    const pool = createPool();
+
+    // Check if work item exists
+    const wiExists = await pool.query('SELECT 1 FROM work_item WHERE id = $1', [params.id]);
+    if (wiExists.rows.length === 0) {
+      await pool.end();
+      return reply.code(404).send({ error: 'work item not found' });
+    }
+
+    // Check if contact exists and get its name
+    const contactResult = await pool.query(
+      'SELECT display_name FROM contact WHERE id = $1',
+      [body.contactId]
+    );
+    if (contactResult.rows.length === 0) {
+      await pool.end();
+      return reply.code(400).send({ error: 'contact not found' });
+    }
+    const contactName = (contactResult.rows[0] as { display_name: string }).display_name;
+
+    // Check if link already exists
+    const existingLink = await pool.query(
+      'SELECT 1 FROM work_item_contact WHERE work_item_id = $1 AND contact_id = $2',
+      [params.id, body.contactId]
+    );
+    if (existingLink.rows.length > 0) {
+      await pool.end();
+      return reply.code(409).send({ error: 'contact already linked to this work item' });
+    }
+
+    // Create the link
+    await pool.query(
+      `INSERT INTO work_item_contact (work_item_id, contact_id, relationship)
+       VALUES ($1, $2, $3::contact_relationship_type)`,
+      [params.id, body.contactId, body.relationship]
+    );
+
+    await pool.end();
+
+    return reply.code(201).send({
+      workItemId: params.id,
+      contactId: body.contactId,
+      relationship: body.relationship,
+      contactName,
+    });
+  });
+
+  // DELETE /api/work-items/:id/contacts/:contactId - Unlink a contact from a work item
+  app.delete('/api/work-items/:id/contacts/:contactId', async (req, reply) => {
+    const params = req.params as { id: string; contactId: string };
+    const pool = createPool();
+
+    const result = await pool.query(
+      `DELETE FROM work_item_contact
+       WHERE work_item_id = $1 AND contact_id = $2
+       RETURNING work_item_id::text`,
+      [params.id, params.contactId]
+    );
+
+    await pool.end();
+
+    if (result.rows.length === 0) {
+      return reply.code(404).send({ error: 'not found' });
+    }
+
+    return reply.code(204).send();
+  });
+
   app.post('/api/contacts/:id/endpoints', async (req, reply) => {
     const params = req.params as { id: string };
     const body = req.body as {
