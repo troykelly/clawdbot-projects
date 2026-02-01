@@ -5246,5 +5246,565 @@ app.delete('/api/work-items/:id', async (req, reply) => {
     return reply.send({ days: daysList });
   });
 
+  // ==================== Email & Calendar Sync API (Issue #184) ====================
+
+  // GET /api/oauth/connections - List OAuth connections
+  app.get('/api/oauth/connections', async (req, reply) => {
+    const query = req.query as { userEmail?: string };
+    const pool = createPool();
+
+    let sql = `
+      SELECT id::text as id, user_email, provider, scopes, expires_at, created_at, updated_at
+      FROM oauth_connection
+    `;
+    const params: string[] = [];
+
+    if (query.userEmail) {
+      sql += ' WHERE user_email = $1';
+      params.push(query.userEmail);
+    }
+
+    sql += ' ORDER BY created_at DESC';
+
+    const result = await pool.query(sql, params);
+    await pool.end();
+
+    return reply.send({
+      connections: result.rows.map((row: Record<string, unknown>) => ({
+        id: row.id,
+        userEmail: row.user_email,
+        provider: row.provider,
+        scopes: row.scopes,
+        expiresAt: row.expires_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })),
+    });
+  });
+
+  // GET /api/oauth/authorize/:provider - Get OAuth authorization URL
+  app.get('/api/oauth/authorize/:provider', async (req, reply) => {
+    const params = req.params as { provider: string };
+    const query = req.query as { userEmail?: string; scopes?: string };
+
+    const validProviders = ['google', 'microsoft'];
+    if (!validProviders.includes(params.provider)) {
+      return reply.code(400).send({ error: 'Unknown OAuth provider' });
+    }
+
+    const scopes = query.scopes?.split(',') || ['email', 'calendar'];
+    const state = randomBytes(32).toString('hex');
+
+    // In production, these would be real OAuth URLs
+    // For now, return mock authorization URLs for testing
+    const authUrls: Record<string, string> = {
+      google: `https://accounts.google.com/o/oauth2/v2/auth?scope=${encodeURIComponent(scopes.join(' '))}`,
+      microsoft: `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?scope=${encodeURIComponent(scopes.join(' '))}`,
+    };
+
+    return reply.send({
+      authUrl: authUrls[params.provider],
+      state,
+      provider: params.provider,
+      scopes,
+    });
+  });
+
+  // DELETE /api/oauth/connections/:id - Remove OAuth connection
+  app.delete('/api/oauth/connections/:id', async (req, reply) => {
+    const params = req.params as { id: string };
+    const pool = createPool();
+
+    const result = await pool.query(
+      'DELETE FROM oauth_connection WHERE id = $1 RETURNING id',
+      [params.id]
+    );
+    await pool.end();
+
+    if (result.rowCount === 0) {
+      return reply.code(404).send({ error: 'OAuth connection not found' });
+    }
+
+    return reply.code(204).send();
+  });
+
+  // POST /api/sync/emails - Trigger email sync
+  app.post('/api/sync/emails', async (req, reply) => {
+    const body = req.body as { userEmail: string; provider: string };
+    const pool = createPool();
+
+    // Check for OAuth connection
+    const connResult = await pool.query(
+      `SELECT id FROM oauth_connection
+       WHERE user_email = $1 AND provider = $2`,
+      [body.userEmail, body.provider]
+    );
+
+    if (connResult.rows.length === 0) {
+      await pool.end();
+      return reply.code(400).send({ error: 'No OAuth connection found for this provider' });
+    }
+
+    // In production, this would queue a background job to sync emails
+    // For now, return success to indicate sync was initiated
+    await pool.end();
+
+    return reply.code(202).send({
+      status: 'sync_initiated',
+      userEmail: body.userEmail,
+      provider: body.provider,
+    });
+  });
+
+  // GET /api/emails - Get synced emails
+  app.get('/api/emails', async (req, reply) => {
+    const query = req.query as { provider?: string; limit?: string };
+    const limit = Math.min(parseInt(query.limit || '50', 10), 100);
+    const pool = createPool();
+
+    let sql = `
+      SELECT m.id::text as id, m.external_message_key, m.direction,
+             m.body, m.subject, m.from_address, m.to_addresses, m.cc_addresses,
+             m.received_at, t.channel, t.sync_provider
+      FROM external_message m
+      JOIN external_thread t ON m.thread_id = t.id
+      WHERE t.channel = 'email'
+    `;
+    const params: (string | number)[] = [];
+    let paramIndex = 1;
+
+    if (query.provider) {
+      sql += ` AND t.sync_provider = $${paramIndex}`;
+      params.push(query.provider);
+      paramIndex++;
+    }
+
+    sql += ` ORDER BY m.received_at DESC LIMIT $${paramIndex}`;
+    params.push(limit);
+
+    const result = await pool.query(sql, params);
+    await pool.end();
+
+    return reply.send({
+      emails: result.rows.map((row: Record<string, unknown>) => ({
+        id: row.id,
+        externalKey: row.external_message_key,
+        direction: row.direction,
+        body: row.body,
+        subject: row.subject,
+        fromAddress: row.from_address,
+        toAddresses: row.to_addresses,
+        ccAddresses: row.cc_addresses,
+        receivedAt: row.received_at,
+        channel: row.channel,
+        provider: row.sync_provider,
+      })),
+    });
+  });
+
+  // POST /api/emails/send - Send email reply
+  app.post('/api/emails/send', async (req, reply) => {
+    const body = req.body as { userEmail: string; threadId: string; body: string };
+    const pool = createPool();
+
+    // Verify OAuth connection exists
+    const thread = await pool.query(
+      `SELECT t.id, t.sync_provider
+       FROM external_thread t
+       WHERE t.id = $1`,
+      [body.threadId]
+    );
+
+    if (thread.rows.length === 0) {
+      await pool.end();
+      return reply.code(404).send({ error: 'Thread not found' });
+    }
+
+    const provider = thread.rows[0].sync_provider || 'google';
+
+    // Check OAuth connection
+    const conn = await pool.query(
+      `SELECT id FROM oauth_connection
+       WHERE user_email = $1 AND provider = $2`,
+      [body.userEmail, provider]
+    );
+
+    if (conn.rows.length === 0) {
+      await pool.end();
+      return reply.code(400).send({ error: 'No OAuth connection found' });
+    }
+
+    // In production, this would queue the email to be sent via the provider's API
+    // For now, create an outbound message record
+    await pool.query(
+      `INSERT INTO external_message (thread_id, external_message_key, direction, body)
+       VALUES ($1, $2, 'outbound', $3)`,
+      [body.threadId, `outbound-${Date.now()}`, body.body]
+    );
+
+    await pool.end();
+
+    return reply.code(202).send({
+      status: 'queued',
+      threadId: body.threadId,
+    });
+  });
+
+  // POST /api/emails/create-work-item - Create work item from email
+  app.post('/api/emails/create-work-item', async (req, reply) => {
+    const body = req.body as { messageId: string; title?: string };
+    const pool = createPool();
+
+    // Get the message
+    const messageResult = await pool.query(
+      `SELECT m.id, m.thread_id, m.body, m.subject, t.endpoint_id
+       FROM external_message m
+       JOIN external_thread t ON m.thread_id = t.id
+       WHERE m.id = $1`,
+      [body.messageId]
+    );
+
+    if (messageResult.rows.length === 0) {
+      await pool.end();
+      return reply.code(404).send({ error: 'Message not found' });
+    }
+
+    const message = messageResult.rows[0];
+    const title = body.title || message.subject || 'Work item from email';
+
+    // Create work item
+    const workItemResult = await pool.query(
+      `INSERT INTO work_item (title, status, work_item_kind, description)
+       VALUES ($1, 'open', 'issue', $2)
+       RETURNING id::text as id, title, status, work_item_kind`,
+      [title, message.body]
+    );
+
+    // Link to communication
+    await pool.query(
+      `INSERT INTO work_item_communication (work_item_id, thread_id, message_id)
+       VALUES ($1, $2, $3)`,
+      [workItemResult.rows[0].id, message.thread_id, message.id]
+    );
+
+    await pool.end();
+
+    return reply.code(201).send({
+      workItem: workItemResult.rows[0],
+    });
+  });
+
+  // POST /api/sync/calendar - Trigger calendar sync
+  app.post('/api/sync/calendar', async (req, reply) => {
+    const body = req.body as { userEmail: string; provider: string };
+    const pool = createPool();
+
+    // Check for OAuth connection with calendar scope
+    const connResult = await pool.query(
+      `SELECT id FROM oauth_connection
+       WHERE user_email = $1 AND provider = $2 AND 'calendar' = ANY(scopes)`,
+      [body.userEmail, body.provider]
+    );
+
+    if (connResult.rows.length === 0) {
+      await pool.end();
+      return reply.code(400).send({ error: 'No OAuth connection found with calendar scope' });
+    }
+
+    await pool.end();
+
+    return reply.code(202).send({
+      status: 'sync_initiated',
+      userEmail: body.userEmail,
+      provider: body.provider,
+    });
+  });
+
+  // GET /api/calendar/events - Get calendar events
+  app.get('/api/calendar/events', async (req, reply) => {
+    const query = req.query as {
+      userEmail?: string;
+      startAfter?: string;
+      endBefore?: string;
+      limit?: string;
+    };
+    const limit = Math.min(parseInt(query.limit || '100', 10), 500);
+    const pool = createPool();
+
+    let sql = `
+      SELECT id::text as id, user_email, provider, external_event_id,
+             title, description, start_time, end_time, location, attendees,
+             work_item_id::text as work_item_id, created_at, updated_at
+      FROM calendar_event
+      WHERE 1=1
+    `;
+    const params: (string | number)[] = [];
+    let paramIndex = 1;
+
+    if (query.userEmail) {
+      sql += ` AND user_email = $${paramIndex}`;
+      params.push(query.userEmail);
+      paramIndex++;
+    }
+
+    if (query.startAfter) {
+      sql += ` AND start_time >= $${paramIndex}::timestamptz`;
+      params.push(query.startAfter);
+      paramIndex++;
+    }
+
+    if (query.endBefore) {
+      sql += ` AND end_time <= $${paramIndex}::timestamptz`;
+      params.push(query.endBefore);
+      paramIndex++;
+    }
+
+    sql += ` ORDER BY start_time ASC LIMIT $${paramIndex}`;
+    params.push(limit);
+
+    const result = await pool.query(sql, params);
+    await pool.end();
+
+    return reply.send({
+      events: result.rows.map((row: Record<string, unknown>) => ({
+        id: row.id,
+        userEmail: row.user_email,
+        provider: row.provider,
+        externalEventId: row.external_event_id,
+        title: row.title,
+        description: row.description,
+        startTime: row.start_time,
+        endTime: row.end_time,
+        location: row.location,
+        attendees: row.attendees,
+        workItemId: row.work_item_id,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })),
+    });
+  });
+
+  // POST /api/calendar/events - Create calendar event
+  app.post('/api/calendar/events', async (req, reply) => {
+    const body = req.body as {
+      userEmail: string;
+      provider: string;
+      title: string;
+      description?: string;
+      startTime: string;
+      endTime: string;
+      location?: string;
+      attendees?: Array<{ email: string; name?: string }>;
+    };
+    const pool = createPool();
+
+    // Verify OAuth connection
+    const connResult = await pool.query(
+      `SELECT id FROM oauth_connection
+       WHERE user_email = $1 AND provider = $2`,
+      [body.userEmail, body.provider]
+    );
+
+    if (connResult.rows.length === 0) {
+      await pool.end();
+      return reply.code(400).send({ error: 'No OAuth connection found' });
+    }
+
+    // In production, this would create the event via the provider API first
+    // For now, create it locally with a generated external ID
+    const externalEventId = `local-${Date.now()}-${randomBytes(8).toString('hex')}`;
+
+    const result = await pool.query(
+      `INSERT INTO calendar_event
+       (user_email, provider, external_event_id, title, description, start_time, end_time, location, attendees)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id::text as id, title, description, start_time, end_time, location, attendees`,
+      [
+        body.userEmail,
+        body.provider,
+        externalEventId,
+        body.title,
+        body.description || null,
+        body.startTime,
+        body.endTime,
+        body.location || null,
+        JSON.stringify(body.attendees || []),
+      ]
+    );
+
+    await pool.end();
+
+    return reply.code(201).send({
+      event: {
+        id: result.rows[0].id,
+        title: result.rows[0].title,
+        description: result.rows[0].description,
+        startTime: result.rows[0].start_time,
+        endTime: result.rows[0].end_time,
+        location: result.rows[0].location,
+        attendees: result.rows[0].attendees,
+      },
+    });
+  });
+
+  // POST /api/calendar/events/from-work-item - Create calendar event from work item deadline
+  app.post('/api/calendar/events/from-work-item', async (req, reply) => {
+    const body = req.body as {
+      userEmail: string;
+      provider: string;
+      workItemId: string;
+      reminderMinutes?: number;
+    };
+    const pool = createPool();
+
+    // Verify OAuth connection
+    const connResult = await pool.query(
+      `SELECT id FROM oauth_connection
+       WHERE user_email = $1 AND provider = $2`,
+      [body.userEmail, body.provider]
+    );
+
+    if (connResult.rows.length === 0) {
+      await pool.end();
+      return reply.code(400).send({ error: 'No OAuth connection found' });
+    }
+
+    // Get work item with deadline
+    const workItemResult = await pool.query(
+      `SELECT id::text as id, title, description, not_after
+       FROM work_item
+       WHERE id = $1`,
+      [body.workItemId]
+    );
+
+    if (workItemResult.rows.length === 0) {
+      await pool.end();
+      return reply.code(404).send({ error: 'Work item not found' });
+    }
+
+    const workItem = workItemResult.rows[0];
+
+    if (!workItem.not_after) {
+      await pool.end();
+      return reply.code(400).send({ error: 'Work item has no deadline (not_after)' });
+    }
+
+    // Create calendar event for the deadline
+    const externalEventId = `workitem-${body.workItemId}-${Date.now()}`;
+    const startTime = new Date(workItem.not_after);
+    const endTime = new Date(startTime.getTime() + 30 * 60 * 1000); // 30 min duration
+
+    const result = await pool.query(
+      `INSERT INTO calendar_event
+       (user_email, provider, external_event_id, title, description, start_time, end_time, work_item_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id::text as id, title, description, start_time, end_time, work_item_id::text as work_item_id`,
+      [
+        body.userEmail,
+        body.provider,
+        externalEventId,
+        `Deadline: ${workItem.title}`,
+        workItem.description || null,
+        startTime.toISOString(),
+        endTime.toISOString(),
+        body.workItemId,
+      ]
+    );
+
+    await pool.end();
+
+    return reply.code(201).send({
+      event: {
+        id: result.rows[0].id,
+        title: result.rows[0].title,
+        description: result.rows[0].description,
+        startTime: result.rows[0].start_time,
+        endTime: result.rows[0].end_time,
+        workItemId: result.rows[0].work_item_id,
+      },
+    });
+  });
+
+  // DELETE /api/calendar/events/:id - Delete calendar event
+  app.delete('/api/calendar/events/:id', async (req, reply) => {
+    const params = req.params as { id: string };
+    const pool = createPool();
+
+    const result = await pool.query(
+      'DELETE FROM calendar_event WHERE id = $1 RETURNING id',
+      [params.id]
+    );
+    await pool.end();
+
+    if (result.rowCount === 0) {
+      return reply.code(404).send({ error: 'Calendar event not found' });
+    }
+
+    return reply.code(204).send();
+  });
+
+  // GET /api/work-items/calendar - Get work items with deadlines as calendar entries
+  app.get('/api/work-items/calendar', async (req, reply) => {
+    const query = req.query as {
+      startDate?: string;
+      endDate?: string;
+      kind?: string;
+      status?: string;
+    };
+    const pool = createPool();
+
+    let sql = `
+      SELECT id::text as id, title, description, status, work_item_kind,
+             not_before, not_after, priority::text as priority
+      FROM work_item
+      WHERE not_after IS NOT NULL
+    `;
+    const params: string[] = [];
+    let paramIndex = 1;
+
+    if (query.startDate) {
+      sql += ` AND not_after >= $${paramIndex}::timestamptz`;
+      params.push(query.startDate);
+      paramIndex++;
+    }
+
+    if (query.endDate) {
+      sql += ` AND not_after <= $${paramIndex}::timestamptz`;
+      params.push(query.endDate);
+      paramIndex++;
+    }
+
+    if (query.kind) {
+      sql += ` AND work_item_kind = $${paramIndex}`;
+      params.push(query.kind);
+      paramIndex++;
+    }
+
+    if (query.status) {
+      sql += ` AND status = $${paramIndex}`;
+      params.push(query.status);
+      paramIndex++;
+    }
+
+    sql += ' ORDER BY not_after ASC';
+
+    const result = await pool.query(sql, params);
+    await pool.end();
+
+    return reply.send({
+      entries: result.rows.map((row: Record<string, unknown>) => ({
+        id: row.id,
+        title: row.title,
+        description: row.description,
+        status: row.status,
+        kind: row.work_item_kind,
+        startDate: row.not_before,
+        endDate: row.not_after,
+        priority: row.priority,
+        type: 'work_item_deadline',
+      })),
+    });
+  });
+
   return app;
 }

@@ -49,6 +49,8 @@ const APPLICATION_TABLES = [
   'work_item_comment_reaction',
   'work_item_comment',
   'user_presence',
+  'calendar_event',
+  'oauth_connection',
   // Async/queue tables (no FKs today, but still want consistent cleanup)
   'webhook_outbox',
   'internal_job',
