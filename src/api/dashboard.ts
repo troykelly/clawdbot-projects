@@ -309,6 +309,7 @@ export function renderWorkItemDetail({ email }: DashboardPageOptions): string {
       <a href="/dashboard/work-items">Work items</a>
       <a href="/dashboard/inbox">Inbox</a>
       <a id="timelineLink" href="#">Timeline</a>
+      <a id="graphLink" href="#">Graph</a>
     </div>
   </div>
 
@@ -400,6 +401,7 @@ export function renderWorkItemDetail({ email }: DashboardPageOptions): string {
 
     const workItemId = window.location.pathname.split('/').pop();
     document.getElementById('timelineLink').href = '/app/work-items/' + workItemId + '/timeline';
+    document.getElementById('graphLink').href = '/app/work-items/' + workItemId + '/graph';
 
     function formatMinutes(m) {
       if (m == null) return '—';

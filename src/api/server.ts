@@ -137,6 +137,24 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
       .send(renderAppFrontendHtml(bootstrap));
   });
 
+  app.get('/app/work-items/:id/graph', async (req, reply) => {
+    const email = await requireDashboardSession(req, reply);
+    if (!email) return;
+
+    const params = req.params as { id: string };
+
+    // Render the SPA shell - graph data will be fetched client-side
+    const bootstrap = {
+      route: { kind: 'graph', id: params.id },
+      me: { email },
+    };
+
+    return reply
+      .code(200)
+      .header('content-type', 'text/html; charset=utf-8')
+      .send(renderAppFrontendHtml(bootstrap));
+  });
+
   app.get('/app/work-items/:id', async (req, reply) => {
     const email = await requireDashboardSession(req, reply);
     if (!email) return;
@@ -854,6 +872,169 @@ app.delete('/api/work-items/:id', async (req, reply) => {
     return reply.send({
       items: items.rows,
       dependencies: dependencies.rows,
+    });
+  });
+
+  app.get('/api/work-items/:id/dependency-graph', async (req, reply) => {
+    const params = req.params as { id: string };
+    const pool = createPool();
+
+    // Check if root item exists
+    const root = await pool.query(
+      `SELECT id FROM work_item WHERE id = $1`,
+      [params.id]
+    );
+
+    if (root.rows.length === 0) {
+      await pool.end();
+      return reply.code(404).send({ error: 'not found' });
+    }
+
+    // Get all descendants (including the root)
+    const nodes = await pool.query(
+      `WITH RECURSIVE descendants AS (
+         SELECT id, parent_work_item_id, 0 as level
+           FROM work_item
+          WHERE id = $1
+         UNION ALL
+         SELECT wi.id, wi.parent_work_item_id, d.level + 1
+           FROM work_item wi
+           JOIN descendants d ON wi.parent_work_item_id = d.id
+       )
+       SELECT wi.id::text as id,
+              wi.title,
+              wi.work_item_kind as kind,
+              wi.status,
+              wi.priority::text as priority,
+              wi.parent_work_item_id::text as parent_id,
+              d.level,
+              wi.not_before,
+              wi.not_after,
+              wi.estimate_minutes,
+              wi.actual_minutes
+         FROM descendants d
+         JOIN work_item wi ON wi.id = d.id
+        ORDER BY d.level, wi.created_at`,
+      [params.id]
+    );
+
+    const itemIds = nodes.rows.map((n: { id: string }) => n.id);
+
+    // Get all dependencies between items in this subtree
+    const edges = await pool.query(
+      `SELECT wid.id::text as id,
+              wid.work_item_id::text as source,
+              wid.depends_on_work_item_id::text as target,
+              wid.kind
+         FROM work_item_dependency wid
+        WHERE wid.work_item_id = ANY($1)
+          AND wid.depends_on_work_item_id = ANY($1)`,
+      [itemIds]
+    );
+
+    // Identify blockers: open items that have open items depending on them
+    const blockerIds = new Set<string>();
+    const dependencyMap = new Map<string, string[]>(); // source -> [targets]
+
+    for (const edge of edges.rows) {
+      const { source, target } = edge as { source: string; target: string };
+      if (!dependencyMap.has(source)) {
+        dependencyMap.set(source, []);
+      }
+      dependencyMap.get(source)!.push(target);
+    }
+
+    // Mark items that are blocking other open items
+    const nodeStatusMap = new Map<string, string | null>();
+    for (const node of nodes.rows) {
+      const { id, status } = node as { id: string; status: string | null };
+      nodeStatusMap.set(id, status);
+    }
+
+    for (const [source, targets] of dependencyMap) {
+      const sourceStatus = nodeStatusMap.get(source);
+      if (sourceStatus === 'open' || sourceStatus === 'blocked') {
+        for (const target of targets) {
+          const targetStatus = nodeStatusMap.get(target);
+          if (targetStatus === 'open' || targetStatus === 'blocked') {
+            blockerIds.add(target);
+          }
+        }
+      }
+    }
+
+    // Compute critical path using longest path through dependency graph
+    // Critical path = longest chain of dependent items (by estimate sum or count)
+    const criticalPath: Array<{ id: string; title: string; estimate_minutes: number | null }> = [];
+
+    // Build adjacency list for reverse traversal (target -> sources that depend on it)
+    const reverseAdjacency = new Map<string, string[]>();
+    for (const [source, targets] of dependencyMap) {
+      for (const target of targets) {
+        if (!reverseAdjacency.has(target)) {
+          reverseAdjacency.set(target, []);
+        }
+        reverseAdjacency.get(target)!.push(source);
+      }
+    }
+
+    // Find nodes with no dependencies (leaf nodes in dependency graph)
+    const leafNodes = itemIds.filter((id: string) => !dependencyMap.has(id) || dependencyMap.get(id)!.length === 0);
+
+    // DFS to find longest path from each leaf, tracking by estimate sum
+    function findLongestPath(nodeId: string, visited: Set<string>): Array<{ id: string; title: string; estimate_minutes: number | null }> {
+      if (visited.has(nodeId)) return [];
+      visited.add(nodeId);
+
+      const node = nodes.rows.find((n: { id: string }) => n.id === nodeId) as {
+        id: string;
+        title: string;
+        estimate_minutes: number | null;
+      } | undefined;
+
+      if (!node) return [];
+
+      const dependents = reverseAdjacency.get(nodeId) || [];
+      let longestSubPath: Array<{ id: string; title: string; estimate_minutes: number | null }> = [];
+      let longestEstimate = 0;
+
+      for (const depId of dependents) {
+        const subPath = findLongestPath(depId, new Set(visited));
+        const subEstimate = subPath.reduce((sum, n) => sum + (n.estimate_minutes || 0), 0);
+        if (subEstimate > longestEstimate || (subEstimate === longestEstimate && subPath.length > longestSubPath.length)) {
+          longestSubPath = subPath;
+          longestEstimate = subEstimate;
+        }
+      }
+
+      return [{ id: node.id, title: node.title, estimate_minutes: node.estimate_minutes }, ...longestSubPath];
+    }
+
+    // Find the longest path starting from any leaf
+    let globalLongestPath: Array<{ id: string; title: string; estimate_minutes: number | null }> = [];
+    let globalLongestEstimate = 0;
+
+    for (const leafId of leafNodes) {
+      const path = findLongestPath(leafId, new Set());
+      const pathEstimate = path.reduce((sum, n) => sum + (n.estimate_minutes || 0), 0);
+      if (pathEstimate > globalLongestEstimate || (pathEstimate === globalLongestEstimate && path.length > globalLongestPath.length)) {
+        globalLongestPath = path;
+        globalLongestEstimate = pathEstimate;
+      }
+    }
+
+    // Mark nodes with is_blocker flag
+    const nodesWithBlockerFlag = nodes.rows.map((node: { id: string }) => ({
+      ...node,
+      is_blocker: blockerIds.has(node.id),
+    }));
+
+    await pool.end();
+
+    return reply.send({
+      nodes: nodesWithBlockerFlag,
+      edges: edges.rows,
+      critical_path: globalLongestPath,
     });
   });
 
