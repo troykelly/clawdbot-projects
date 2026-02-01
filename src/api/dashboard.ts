@@ -308,6 +308,7 @@ export function renderWorkItemDetail({ email }: DashboardPageOptions): string {
     <div class="row">
       <a href="/dashboard/work-items">Work items</a>
       <a href="/dashboard/inbox">Inbox</a>
+      <a id="timelineLink" href="#">Timeline</a>
     </div>
   </div>
 
@@ -398,6 +399,7 @@ export function renderWorkItemDetail({ email }: DashboardPageOptions): string {
     ${baseScript()}
 
     const workItemId = window.location.pathname.split('/').pop();
+    document.getElementById('timelineLink').href = '/app/work-items/' + workItemId + '/timeline';
 
     function formatMinutes(m) {
       if (m == null) return '—';
