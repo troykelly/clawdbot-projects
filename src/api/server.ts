@@ -137,6 +137,24 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
       .send(renderAppFrontendHtml(bootstrap));
   });
 
+  app.get('/app/work-items/:id/graph', async (req, reply) => {
+    const email = await requireDashboardSession(req, reply);
+    if (!email) return;
+
+    const params = req.params as { id: string };
+
+    // Render the SPA shell - graph data will be fetched client-side
+    const bootstrap = {
+      route: { kind: 'graph', id: params.id },
+      me: { email },
+    };
+
+    return reply
+      .code(200)
+      .header('content-type', 'text/html; charset=utf-8')
+      .send(renderAppFrontendHtml(bootstrap));
+  });
+
   app.get('/app/work-items/:id', async (req, reply) => {
     const email = await requireDashboardSession(req, reply);
     if (!email) return;
