@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import path from 'node:path';
 
 export default defineConfig({
   test: {
@@ -9,5 +10,10 @@ export default defineConfig({
     // Parallelism is disabled to avoid migration race conditions. If migrating
     // to per-file temp databases, this could be re-enabled.
     fileParallelism: false,
+  },
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
   },
 });
