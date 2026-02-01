@@ -119,6 +119,24 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
       );
   });
 
+  app.get('/app/work-items/:id/timeline', async (req, reply) => {
+    const email = await requireDashboardSession(req, reply);
+    if (!email) return;
+
+    const params = req.params as { id: string };
+
+    // Render the SPA shell - timeline data will be fetched client-side
+    const bootstrap = {
+      route: { kind: 'timeline', id: params.id },
+      me: { email },
+    };
+
+    return reply
+      .code(200)
+      .header('content-type', 'text/html; charset=utf-8')
+      .send(renderAppFrontendHtml(bootstrap));
+  });
+
   app.get('/app/work-items/:id', async (req, reply) => {
     const email = await requireDashboardSession(req, reply);
     if (!email) return;
