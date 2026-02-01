@@ -52,7 +52,7 @@ describe('/app frontend', () => {
     const res = await app.inject({ method: 'GET', url: '/app/work-items' });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toMatch(/text\/html/);
-    expect(res.body).toContain('Dashboard login');
+    expect(res.body).toContain('Sign in');
   });
 
   it('serves the app shell for list + detail pages when authenticated', async () => {
