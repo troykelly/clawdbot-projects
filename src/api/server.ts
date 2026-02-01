@@ -2721,6 +2721,122 @@ app.delete('/api/work-items/:id', async (req, reply) => {
     }
   });
 
+  // Work Item Dates API (issue #113)
+  // PATCH /api/work-items/:id/dates - Update work item dates
+  app.patch('/api/work-items/:id/dates', async (req, reply) => {
+    const params = req.params as { id: string };
+    const body = req.body as { startDate?: string | null; endDate?: string | null };
+
+    // Check at least one field is provided
+    const hasStartDate = Object.prototype.hasOwnProperty.call(body, 'startDate');
+    const hasEndDate = Object.prototype.hasOwnProperty.call(body, 'endDate');
+    if (!hasStartDate && !hasEndDate) {
+      return reply.code(400).send({ error: 'at least one date field is required' });
+    }
+
+    // Validate date formats
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    const parseDate = (str: string | null | undefined): Date | null => {
+      if (str === null || str === undefined) return null;
+      if (!dateRegex.test(str)) return new Date('invalid');
+      const d = new Date(str + 'T00:00:00Z');
+      return isNaN(d.getTime()) ? new Date('invalid') : d;
+    };
+
+    let newStartDate: Date | null | undefined;
+    let newEndDate: Date | null | undefined;
+
+    if (hasStartDate) {
+      if (body.startDate === null) {
+        newStartDate = null;
+      } else {
+        newStartDate = parseDate(body.startDate);
+        if (newStartDate && isNaN(newStartDate.getTime())) {
+          return reply.code(400).send({ error: 'invalid date format' });
+        }
+      }
+    }
+
+    if (hasEndDate) {
+      if (body.endDate === null) {
+        newEndDate = null;
+      } else {
+        newEndDate = parseDate(body.endDate);
+        if (newEndDate && isNaN(newEndDate.getTime())) {
+          return reply.code(400).send({ error: 'invalid date format' });
+        }
+      }
+    }
+
+    const pool = createPool();
+
+    // Check if work item exists and get current dates
+    const existing = await pool.query(
+      `SELECT id, not_before, not_after FROM work_item WHERE id = $1`,
+      [params.id]
+    );
+    if (existing.rows.length === 0) {
+      await pool.end();
+      return reply.code(404).send({ error: 'not found' });
+    }
+
+    const currentRow = existing.rows[0] as {
+      not_before: Date | null;
+      not_after: Date | null;
+    };
+
+    // Determine final dates
+    const finalStartDate = hasStartDate ? newStartDate : currentRow.not_before;
+    const finalEndDate = hasEndDate ? newEndDate : currentRow.not_after;
+
+    // Validate date range
+    if (finalStartDate && finalEndDate) {
+      if (finalStartDate > finalEndDate) {
+        await pool.end();
+        return reply.code(400).send({ error: 'startDate must be before or equal to endDate' });
+      }
+    }
+
+    // Update the work item
+    const result = await pool.query(
+      `UPDATE work_item
+          SET not_before = $2::timestamptz,
+              not_after = $3::timestamptz,
+              updated_at = now()
+        WHERE id = $1
+      RETURNING id::text as id,
+                not_before,
+                not_after,
+                updated_at`,
+      [params.id, finalStartDate, finalEndDate]
+    );
+
+    await pool.end();
+
+    const row = result.rows[0] as {
+      id: string;
+      not_before: Date | null;
+      not_after: Date | null;
+      updated_at: Date;
+    };
+
+    // Format dates as YYYY-MM-DD for response
+    const formatDate = (d: Date | null): string | null => {
+      if (!d) return null;
+      return d.toISOString().split('T')[0];
+    };
+
+    return reply.send({
+      ok: true,
+      item: {
+        id: row.id,
+        startDate: formatDate(row.not_before),
+        endDate: formatDate(row.not_after),
+        updatedAt: row.updated_at.toISOString(),
+      },
+    });
+  });
+
   // Todos API (issue #108)
   // GET /api/work-items/:id/todos - List todos for a work item
   app.get('/api/work-items/:id/todos', async (req, reply) => {
