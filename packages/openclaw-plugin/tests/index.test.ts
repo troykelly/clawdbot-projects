@@ -4,8 +4,10 @@ import {
   plugin,
   createMemoryRecallTool,
   createMemoryStoreTool,
+  createMemoryForgetTool,
   MemoryRecallParamsSchema,
   MemoryStoreParamsSchema,
+  MemoryForgetParamsSchema,
   MemoryCategory,
 } from '../src/index.js'
 
@@ -79,6 +81,17 @@ describe('Plugin Entry Point', () => {
       expect(result.tools.memoryStore).toBeDefined()
       expect(result.tools.memoryStore.name).toBe('memory_store')
     })
+
+    it('should return instance with memoryForget tool', () => {
+      const mockContext = {
+        config: { apiUrl: 'http://example.com', apiKey: 'test-key' },
+        logger: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {}, namespace: 'test' },
+      }
+      const result = register(mockContext)
+      expect(result.tools).toBeDefined()
+      expect(result.tools.memoryForget).toBeDefined()
+      expect(result.tools.memoryForget.name).toBe('memory_forget')
+    })
   })
 
   describe('tool exports', () => {
@@ -90,12 +103,20 @@ describe('Plugin Entry Point', () => {
       expect(typeof createMemoryStoreTool).toBe('function')
     })
 
+    it('should export createMemoryForgetTool', () => {
+      expect(typeof createMemoryForgetTool).toBe('function')
+    })
+
     it('should export MemoryRecallParamsSchema', () => {
       expect(MemoryRecallParamsSchema).toBeDefined()
     })
 
     it('should export MemoryStoreParamsSchema', () => {
       expect(MemoryStoreParamsSchema).toBeDefined()
+    })
+
+    it('should export MemoryForgetParamsSchema', () => {
+      expect(MemoryForgetParamsSchema).toBeDefined()
     })
 
     it('should export MemoryCategory enum', () => {
