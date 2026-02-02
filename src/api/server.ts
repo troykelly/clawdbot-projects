@@ -3,6 +3,7 @@ import cookie from '@fastify/cookie';
 import formbody from '@fastify/formbody';
 import fastifyStatic from '@fastify/static';
 import rateLimit from '@fastify/rate-limit';
+import websocket from '@fastify/websocket';
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -21,6 +22,7 @@ import { WebhookHealthChecker, verifyTwilioSignature, verifyPostmarkAuth, verify
 import { processTwilioSms, type TwilioSmsWebhookPayload } from './twilio/index.ts';
 import { processPostmarkEmail, type PostmarkInboundPayload } from './postmark/index.ts';
 import { processCloudflareEmail, type CloudflareEmailPayload } from './cloudflare-email/index.ts';
+import { RealtimeHub } from './realtime/index.ts';
 
 export type ProjectsApiOptions = {
   logger?: boolean;
@@ -38,6 +40,9 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
 
   // Support URL-encoded form bodies (used by Twilio webhooks)
   app.register(formbody);
+
+  // WebSocket support for real-time updates (Issue #213)
+  app.register(websocket);
 
   // Rate limiting configuration (Issue #212)
   // Skip rate limiting in test environment or when explicitly disabled
@@ -232,6 +237,8 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
     '/api/twilio/sms',
     '/api/postmark/inbound',
     '/api/cloudflare/email',
+    // WebSocket endpoint uses its own auth via query params or cookies
+    '/api/ws',
   ]);
 
   // Bearer token authentication hook for API routes
@@ -322,6 +329,128 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
     const health = await healthRegistry.checkAll();
     const statusCode = health.status === 'unhealthy' ? 503 : 200;
     return reply.code(statusCode).send(health);
+  });
+
+  // Real-time WebSocket endpoint (Issue #213)
+  // Create a new hub instance per server (not a singleton) for proper cleanup
+  const realtimeHub = new RealtimeHub();
+  // Only initialize PostgreSQL NOTIFY/LISTEN in non-test environment
+  // (it holds a connection that can cause test timeouts)
+  let realtimePool: ReturnType<typeof createPool> | null = null;
+  if (process.env.NODE_ENV !== 'test') {
+    realtimePool = createPool();
+    realtimeHub.initialize(realtimePool).catch((err) => {
+      console.error('[WebSocket] Failed to initialize realtime hub:', err);
+    });
+  }
+
+  app.get('/api/ws', { websocket: true }, async (socket, req) => {
+    // Authenticate via session cookie or bearer token in query
+    let userId: string | undefined;
+
+    // Try session cookie first
+    const sessionEmail = await getSessionEmail(req);
+    if (sessionEmail) {
+      userId = sessionEmail;
+    } else if (!isAuthDisabled()) {
+      // Try bearer token from query string
+      const query = req.query as { token?: string };
+      if (query.token) {
+        const expectedSecret = getCachedSecret();
+        if (expectedSecret && compareSecrets(query.token, expectedSecret)) {
+          // Token valid but no user ID from bearer tokens
+          // Agent connections can set x-agent-name header
+          const agentName = req.headers['x-agent-name'];
+          if (typeof agentName === 'string') {
+            userId = `agent:${agentName}`;
+          }
+        } else {
+          socket.close(4001, 'Unauthorized');
+          return;
+        }
+      } else {
+        socket.close(4001, 'Unauthorized');
+        return;
+      }
+    }
+
+    // Add client to the hub
+    const clientId = realtimeHub.addClient(socket, userId);
+
+    // Handle incoming messages
+    socket.on('message', (data: Buffer) => {
+      try {
+        const message = JSON.parse(data.toString());
+
+        // Handle ping/pong for heartbeat
+        if (message.event === 'connection:pong') {
+          realtimeHub.updateClientPing(clientId);
+        }
+      } catch {
+        // Ignore malformed messages
+      }
+    });
+
+    // Handle client disconnect
+    socket.on('close', () => {
+      realtimeHub.removeClient(clientId);
+    });
+
+    socket.on('error', (err) => {
+      console.error(`[WebSocket] Client ${clientId} error:`, err);
+      realtimeHub.removeClient(clientId);
+    });
+  });
+
+  // Realtime stats endpoint (for monitoring)
+  app.get('/api/ws/stats', async () => ({
+    connectedClients: realtimeHub.getClientCount(),
+  }));
+
+  // SSE fallback endpoint (Issue #213)
+  // For clients that can't use WebSockets
+  app.get('/api/events', async (req, reply) => {
+    // Authenticate via session cookie
+    const sessionEmail = await getSessionEmail(req);
+    if (!sessionEmail && !isAuthDisabled()) {
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+    });
+
+    // Send initial connection event
+    reply.raw.write(
+      `data: ${JSON.stringify({
+        event: 'connection:established',
+        data: { connectedAt: new Date().toISOString() },
+        timestamp: new Date().toISOString(),
+      })}\n\n`
+    );
+
+    // Keep connection alive with periodic comments
+    const keepAlive = setInterval(() => {
+      reply.raw.write(': keepalive\n\n');
+    }, 30000);
+
+    req.raw.on('close', () => {
+      clearInterval(keepAlive);
+    });
+
+    // Note: In a full implementation, we would subscribe to the realtime hub
+    // and forward events to this SSE stream. For now, clients can use WebSocket.
+  });
+
+  // Cleanup on server close
+  app.addHook('onClose', async () => {
+    await realtimeHub.shutdown();
+    if (realtimePool) {
+      await realtimePool.end();
+    }
   });
 
   // Agent context bootstrap endpoint (Issue #219)

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } 
 import { runMigrate } from './helpers/migrate.js';
 import { buildServer } from '../src/api/server.js';
 import { clearCachedSecret } from '../src/api/auth/secret.js';
+import { resetRealtimeHub } from '../src/api/realtime/hub.js';
 import { writeFileSync, unlinkSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -141,11 +142,13 @@ describe('Shared secret authentication', () => {
       delete process.env.CLAWDBOT_AUTH_DISABLED;
     });
 
-    afterEach(() => {
+    afterEach(async () => {
       // Restore original env
       process.env.CLAWDBOT_AUTH_SECRET = originalEnv.CLAWDBOT_AUTH_SECRET;
       process.env.CLAWDBOT_AUTH_DISABLED = originalEnv.CLAWDBOT_AUTH_DISABLED;
       clearCachedSecret();
+      // Reset realtime hub to clean up PostgreSQL connections
+      await resetRealtimeHub();
     });
 
     it('allows access with valid Bearer token', async () => {
@@ -235,10 +238,11 @@ describe('Shared secret authentication', () => {
       delete process.env.CLAWDBOT_AUTH_DISABLED;
     });
 
-    afterEach(() => {
+    afterEach(async () => {
       process.env.CLAWDBOT_AUTH_SECRET = originalEnv.CLAWDBOT_AUTH_SECRET;
       process.env.CLAWDBOT_AUTH_DISABLED = originalEnv.CLAWDBOT_AUTH_DISABLED;
       clearCachedSecret();
+      await resetRealtimeHub();
     });
 
     it('allows /health without auth', async () => {
@@ -317,10 +321,11 @@ describe('Shared secret authentication', () => {
       delete process.env.CLAWDBOT_AUTH_DISABLED;
     });
 
-    afterEach(() => {
+    afterEach(async () => {
       process.env.CLAWDBOT_AUTH_SECRET = originalEnv.CLAWDBOT_AUTH_SECRET;
       process.env.CLAWDBOT_AUTH_DISABLED = originalEnv.CLAWDBOT_AUTH_DISABLED;
       clearCachedSecret();
+      await resetRealtimeHub();
     });
 
     it('allows /api/auth/request-link without bearer auth', async () => {
@@ -369,10 +374,11 @@ describe('Shared secret authentication', () => {
       delete process.env.CLAWDBOT_AUTH_SECRET;
     });
 
-    afterEach(() => {
+    afterEach(async () => {
       process.env.CLAWDBOT_AUTH_SECRET = originalEnv.CLAWDBOT_AUTH_SECRET;
       process.env.CLAWDBOT_AUTH_DISABLED = originalEnv.CLAWDBOT_AUTH_DISABLED;
       clearCachedSecret();
+      await resetRealtimeHub();
     });
 
     it('allows access without auth when CLAWDBOT_AUTH_DISABLED=true', async () => {
@@ -402,10 +408,11 @@ describe('Shared secret authentication', () => {
       delete process.env.CLAWDBOT_AUTH_DISABLED;
     });
 
-    afterEach(() => {
+    afterEach(async () => {
       process.env.CLAWDBOT_AUTH_SECRET = originalEnv.CLAWDBOT_AUTH_SECRET;
       process.env.CLAWDBOT_AUTH_DISABLED = originalEnv.CLAWDBOT_AUTH_DISABLED;
       clearCachedSecret();
+      await resetRealtimeHub();
     });
 
     it('allows /api/me with valid session cookie (no bearer required)', async () => {
@@ -459,10 +466,11 @@ describe('Shared secret authentication', () => {
       delete process.env.CLAWDBOT_AUTH_DISABLED;
     });
 
-    afterEach(() => {
+    afterEach(async () => {
       process.env.CLAWDBOT_AUTH_SECRET = originalEnv.CLAWDBOT_AUTH_SECRET;
       process.env.CLAWDBOT_AUTH_DISABLED = originalEnv.CLAWDBOT_AUTH_DISABLED;
       clearCachedSecret();
+      await resetRealtimeHub();
     });
 
     it('uses constant-time comparison to prevent timing attacks', async () => {
