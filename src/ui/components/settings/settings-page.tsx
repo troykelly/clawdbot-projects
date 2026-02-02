@@ -13,6 +13,7 @@ import {
 import { Skeleton } from '@/ui/components/feedback';
 import { cn } from '@/ui/lib/utils';
 import { useSettings } from './use-settings';
+import { EmbeddingSettingsSection } from './embedding-settings-section';
 import type { Theme, DefaultView, EmailDigestFrequency } from './types';
 
 const COMMON_TIMEZONES = [
@@ -370,6 +371,9 @@ export function SettingsPage() {
             </SettingRow>
           </CardContent>
         </Card>
+
+        {/* Embedding Settings */}
+        <EmbeddingSettingsSection />
       </div>
     </div>
   );
