@@ -1,6 +1,6 @@
 /**
  * Seed a test user and generate a signin link.
- * Usage: npx tsx scripts/seed-user.ts [email]
+ * Usage: node --experimental-transform-types scripts/seed-user.ts [email]
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { Pool } from 'pg';

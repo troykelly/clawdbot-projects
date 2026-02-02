@@ -15,9 +15,9 @@ RUN apt-get update \
     lsb-release \
   && rm -rf /var/lib/apt/lists/*
 
-# Node.js (Vite requires >=20.19). Install Node 22.x from NodeSource.
+# Node.js 25.x (current major) with native TypeScript support via --experimental-transform-types
 RUN set -eux; \
-  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -; \
+  curl -fsSL https://deb.nodesource.com/setup_25.x | bash -; \
   apt-get update; \
   apt-get install -y --no-install-recommends nodejs; \
   rm -rf /var/lib/apt/lists/*
