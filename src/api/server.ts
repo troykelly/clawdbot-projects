@@ -2759,6 +2759,147 @@ app.delete('/api/work-items/:id', async (req, reply) => {
     }
   });
 
+  // GET /api/audit-log - List audit log entries with filtering (Issue #214)
+  app.get('/api/audit-log', async (req, reply) => {
+    const query = req.query as {
+      entityType?: string;
+      entityId?: string;
+      actorType?: string;
+      actorId?: string;
+      action?: string;
+      startDate?: string;
+      endDate?: string;
+      limit?: string;
+      offset?: string;
+    };
+    const pool = createPool();
+
+    try {
+      const { queryAuditLog } = await import('./audit/index.js');
+
+      const options: Parameters<typeof queryAuditLog>[1] = {
+        entityType: query.entityType,
+        entityId: query.entityId,
+        actorId: query.actorId,
+        limit: query.limit ? parseInt(query.limit, 10) : undefined,
+        offset: query.offset ? parseInt(query.offset, 10) : undefined,
+      };
+
+      // Parse actor type
+      if (query.actorType) {
+        const validActorTypes = ['agent', 'human', 'system'];
+        if (!validActorTypes.includes(query.actorType)) {
+          await pool.end();
+          return reply.code(400).send({ error: 'Invalid actorType' });
+        }
+        options.actorType = query.actorType as 'agent' | 'human' | 'system';
+      }
+
+      // Parse action type
+      if (query.action) {
+        const validActions = ['create', 'update', 'delete', 'auth', 'webhook'];
+        if (!validActions.includes(query.action)) {
+          await pool.end();
+          return reply.code(400).send({ error: 'Invalid action' });
+        }
+        options.action = query.action as 'create' | 'update' | 'delete' | 'auth' | 'webhook';
+      }
+
+      // Parse dates
+      if (query.startDate) {
+        const date = new Date(query.startDate);
+        if (isNaN(date.getTime())) {
+          await pool.end();
+          return reply.code(400).send({ error: 'Invalid startDate' });
+        }
+        options.startDate = date;
+      }
+
+      if (query.endDate) {
+        const date = new Date(query.endDate);
+        if (isNaN(date.getTime())) {
+          await pool.end();
+          return reply.code(400).send({ error: 'Invalid endDate' });
+        }
+        options.endDate = date;
+      }
+
+      const { entries, total } = await queryAuditLog(pool, options);
+
+      await pool.end();
+
+      return reply.send({
+        entries,
+        total,
+        limit: options.limit || 50,
+        offset: options.offset || 0,
+      });
+    } catch (error) {
+      await pool.end();
+      console.error('[Audit] Error querying audit log:', error);
+      return reply.code(500).send({ error: 'Failed to query audit log' });
+    }
+  });
+
+  // GET /api/audit-log/entity/:type/:id - Get audit log for specific entity (Issue #214)
+  app.get('/api/audit-log/entity/:type/:id', async (req, reply) => {
+    const params = req.params as { type: string; id: string };
+    const query = req.query as { limit?: string; offset?: string };
+    const pool = createPool();
+
+    try {
+      const { getEntityAuditLog } = await import('./audit/index.js');
+
+      const entries = await getEntityAuditLog(pool, params.type, params.id, {
+        limit: query.limit ? parseInt(query.limit, 10) : undefined,
+        offset: query.offset ? parseInt(query.offset, 10) : undefined,
+      });
+
+      await pool.end();
+
+      return reply.send({
+        entityType: params.type,
+        entityId: params.id,
+        entries,
+        count: entries.length,
+      });
+    } catch (error) {
+      await pool.end();
+      console.error('[Audit] Error getting entity audit log:', error);
+      return reply.code(500).send({ error: 'Failed to get entity audit log' });
+    }
+  });
+
+  // POST /api/audit-log/purge - Purge old audit entries (Issue #214)
+  app.post('/api/audit-log/purge', async (req, reply) => {
+    const body = req.body as { retentionDays?: number };
+    const pool = createPool();
+
+    try {
+      const { purgeOldEntries } = await import('./audit/index.js');
+
+      const retentionDays = body.retentionDays || 90;
+      if (retentionDays < 1 || retentionDays > 3650) {
+        await pool.end();
+        return reply.code(400).send({ error: 'retentionDays must be between 1 and 3650' });
+      }
+
+      const purged = await purgeOldEntries(pool, retentionDays);
+
+      await pool.end();
+
+      return reply.send({
+        success: true,
+        purged,
+        retentionDays,
+      });
+    } catch (error) {
+      await pool.end();
+      console.error('[Audit] Error purging audit log:', error);
+      return reply.code(500).send({ error: 'Failed to purge audit log' });
+    }
+  });
+
   app.get('/api/work-items/:id/rollup', async (req, reply) => {
     const params = req.params as { id: string };
     const pool = createPool();
