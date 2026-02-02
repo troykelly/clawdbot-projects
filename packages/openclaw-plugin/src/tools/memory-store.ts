@@ -1,0 +1,236 @@
+/**
+ * memory_store tool implementation.
+ * Persists important information to long-term memory.
+ */
+
+import { z } from 'zod'
+import type { ApiClient } from '../api-client.js'
+import type { Logger } from '../logger.js'
+import type { PluginConfig } from '../config.js'
+import { MemoryCategory } from './memory-recall.js'
+
+/** Parameters for memory_store tool */
+export const MemoryStoreParamsSchema = z.object({
+  text: z
+    .string()
+    .min(1, 'Text cannot be empty')
+    .max(5000, 'Text must be 5000 characters or less'),
+  category: MemoryCategory.optional(),
+  importance: z.number().min(0).max(1).optional(),
+})
+export type MemoryStoreParams = z.infer<typeof MemoryStoreParamsSchema>
+
+/** Stored memory response from API */
+export interface StoredMemory {
+  id: string
+  content: string
+  category?: string
+  importance?: number
+  createdAt?: string
+}
+
+/** Successful tool result */
+export interface MemoryStoreSuccess {
+  success: true
+  data: {
+    content: string
+    details: {
+      id: string
+      category: string
+      importance: number
+      userId: string
+    }
+  }
+}
+
+/** Failed tool result */
+export interface MemoryStoreFailure {
+  success: false
+  error: string
+}
+
+/** Tool result type */
+export type MemoryStoreResult = MemoryStoreSuccess | MemoryStoreFailure
+
+/** Tool configuration */
+export interface MemoryStoreToolOptions {
+  client: ApiClient
+  logger: Logger
+  config: PluginConfig
+  userId: string
+}
+
+/** Tool definition */
+export interface MemoryStoreTool {
+  name: string
+  description: string
+  parameters: typeof MemoryStoreParamsSchema
+  execute: (params: MemoryStoreParams) => Promise<MemoryStoreResult>
+}
+
+/** Patterns that may indicate credentials */
+const CREDENTIAL_PATTERNS = [
+  /sk-[a-zA-Z0-9]{20,}/i, // OpenAI-style API keys
+  /api[_-]?key[:\s]*[a-zA-Z0-9]{16,}/i, // Generic API keys
+  /password[:\s]*\S{8,}/i, // Passwords
+  /secret[_-]?key[:\s]*[a-zA-Z0-9]{16,}/i, // Secret keys
+  /bearer\s+[a-zA-Z0-9._-]{20,}/i, // Bearer tokens
+]
+
+/**
+ * Sanitize text input to remove control characters.
+ */
+function sanitizeText(text: string): string {
+  // Remove control characters (ASCII 0-31 except tab, newline, carriage return)
+  const sanitized = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+  // Trim whitespace
+  return sanitized.trim()
+}
+
+/**
+ * Check if text may contain credentials.
+ */
+function mayContainCredentials(text: string): boolean {
+  return CREDENTIAL_PATTERNS.some((pattern) => pattern.test(text))
+}
+
+/**
+ * Truncate text for display preview.
+ */
+function truncateForPreview(text: string, maxLength = 100): string {
+  if (text.length <= maxLength) {
+    return text
+  }
+  return text.substring(0, maxLength) + '...'
+}
+
+/**
+ * Create a sanitized error message that doesn't expose internal details.
+ */
+function sanitizeErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    const message = error.message
+      .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '[host]')
+      .replace(/:\d{2,5}\b/g, '')
+      .replace(/\b(?:localhost|internal[-\w]*)\b/gi, '[internal]')
+
+    if (message.includes('[internal]') || message.includes('[host]')) {
+      return 'Failed to store memory. Please try again.'
+    }
+
+    return message
+  }
+  return 'An unexpected error occurred while storing memory.'
+}
+
+/**
+ * Creates the memory_store tool.
+ */
+export function createMemoryStoreTool(options: MemoryStoreToolOptions): MemoryStoreTool {
+  const { client, logger, config, userId } = options
+
+  return {
+    name: 'memory_store',
+    description:
+      'Save important information to long-term memory. Use for preferences, facts, decisions, or any information worth remembering.',
+    parameters: MemoryStoreParamsSchema,
+
+    async execute(params: MemoryStoreParams): Promise<MemoryStoreResult> {
+      // Validate parameters
+      const parseResult = MemoryStoreParamsSchema.safeParse(params)
+      if (!parseResult.success) {
+        const errorMessage = parseResult.error.errors
+          .map((e) => `${e.path.join('.')}: ${e.message}`)
+          .join(', ')
+        return { success: false, error: errorMessage }
+      }
+
+      const {
+        text,
+        category = 'other',
+        importance = 0.7,
+      } = parseResult.data
+
+      // Sanitize text
+      const sanitizedText = sanitizeText(text)
+      if (sanitizedText.length === 0) {
+        return { success: false, error: 'Text cannot be empty after sanitization' }
+      }
+
+      // Check for potential credentials (warn but don't block)
+      if (mayContainCredentials(sanitizedText)) {
+        logger.warn('Potential credential detected in memory_store', {
+          userId,
+          textLength: sanitizedText.length,
+        })
+      }
+
+      // Log invocation (without content for privacy)
+      logger.info('memory_store invoked', {
+        userId,
+        category,
+        importance,
+        textLength: sanitizedText.length,
+      })
+
+      try {
+        // Store memory via API
+        const response = await client.post<StoredMemory>(
+          '/api/memories',
+          {
+            content: sanitizedText,
+            category,
+            importance,
+          },
+          { userId }
+        )
+
+        if (!response.success) {
+          logger.error('memory_store API error', {
+            userId,
+            status: response.error.status,
+            code: response.error.code,
+          })
+          return {
+            success: false,
+            error: response.error.message || 'Failed to store memory',
+          }
+        }
+
+        const stored = response.data
+
+        // Format response
+        const preview = truncateForPreview(sanitizedText)
+        const content = `Stored memory [${category}]: "${preview}"`
+
+        logger.debug('memory_store completed', {
+          userId,
+          memoryId: stored.id,
+        })
+
+        return {
+          success: true,
+          data: {
+            content,
+            details: {
+              id: stored.id,
+              category,
+              importance,
+              userId,
+            },
+          },
+        }
+      } catch (error) {
+        logger.error('memory_store failed', {
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+
+        return {
+          success: false,
+          error: sanitizeErrorMessage(error),
+        }
+      }
+    },
+  }
+}

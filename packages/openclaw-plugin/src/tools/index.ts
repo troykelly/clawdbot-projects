@@ -14,8 +14,15 @@ export {
   type Memory,
 } from './memory-recall.js'
 
-// memory_store tool (to be implemented in #243)
-// export * from './memory-store.js'
+// memory_store tool
+export {
+  createMemoryStoreTool,
+  MemoryStoreParamsSchema,
+  type MemoryStoreParams,
+  type MemoryStoreTool,
+  type MemoryStoreResult,
+  type StoredMemory,
+} from './memory-store.js'
 
 // memory_forget tool (to be implemented in #244)
 // export * from './memory-forget.js'
