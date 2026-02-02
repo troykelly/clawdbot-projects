@@ -11,6 +11,9 @@ import {
   createTodoListTool,
   createTodoCreateTool,
   createTodoCompleteTool,
+  createContactSearchTool,
+  createContactGetTool,
+  createContactCreateTool,
   MemoryRecallParamsSchema,
   MemoryStoreParamsSchema,
   MemoryForgetParamsSchema,
@@ -22,6 +25,9 @@ import {
   TodoListParamsSchema,
   TodoCreateParamsSchema,
   TodoCompleteParamsSchema,
+  ContactSearchParamsSchema,
+  ContactGetParamsSchema,
+  ContactCreateParamsSchema,
 } from '../src/index.js'
 
 describe('Plugin Entry Point', () => {
@@ -171,6 +177,39 @@ describe('Plugin Entry Point', () => {
       expect(result.tools.todoComplete).toBeDefined()
       expect(result.tools.todoComplete.name).toBe('todo_complete')
     })
+
+    it('should return instance with contactSearch tool', () => {
+      const mockContext = {
+        config: { apiUrl: 'http://example.com', apiKey: 'test-key' },
+        logger: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {}, namespace: 'test' },
+      }
+      const result = register(mockContext)
+      expect(result.tools).toBeDefined()
+      expect(result.tools.contactSearch).toBeDefined()
+      expect(result.tools.contactSearch.name).toBe('contact_search')
+    })
+
+    it('should return instance with contactGet tool', () => {
+      const mockContext = {
+        config: { apiUrl: 'http://example.com', apiKey: 'test-key' },
+        logger: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {}, namespace: 'test' },
+      }
+      const result = register(mockContext)
+      expect(result.tools).toBeDefined()
+      expect(result.tools.contactGet).toBeDefined()
+      expect(result.tools.contactGet.name).toBe('contact_get')
+    })
+
+    it('should return instance with contactCreate tool', () => {
+      const mockContext = {
+        config: { apiUrl: 'http://example.com', apiKey: 'test-key' },
+        logger: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {}, namespace: 'test' },
+      }
+      const result = register(mockContext)
+      expect(result.tools).toBeDefined()
+      expect(result.tools.contactCreate).toBeDefined()
+      expect(result.tools.contactCreate.name).toBe('contact_create')
+    })
   })
 
   describe('tool exports', () => {
@@ -252,6 +291,30 @@ describe('Plugin Entry Point', () => {
 
     it('should export TodoCompleteParamsSchema', () => {
       expect(TodoCompleteParamsSchema).toBeDefined()
+    })
+
+    it('should export createContactSearchTool', () => {
+      expect(typeof createContactSearchTool).toBe('function')
+    })
+
+    it('should export createContactGetTool', () => {
+      expect(typeof createContactGetTool).toBe('function')
+    })
+
+    it('should export createContactCreateTool', () => {
+      expect(typeof createContactCreateTool).toBe('function')
+    })
+
+    it('should export ContactSearchParamsSchema', () => {
+      expect(ContactSearchParamsSchema).toBeDefined()
+    })
+
+    it('should export ContactGetParamsSchema', () => {
+      expect(ContactGetParamsSchema).toBeDefined()
+    })
+
+    it('should export ContactCreateParamsSchema', () => {
+      expect(ContactCreateParamsSchema).toBeDefined()
     })
   })
 })
