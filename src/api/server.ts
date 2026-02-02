@@ -271,6 +271,34 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
     return reply.code(statusCode).send(health);
   });
 
+  // Agent context bootstrap endpoint (Issue #219)
+  app.get('/api/bootstrap', async (req, reply) => {
+    const { getBootstrapContext } = await import('./bootstrap/index.ts');
+
+    const query = req.query as {
+      user_email?: string;
+      include?: string;
+      exclude?: string;
+    };
+
+    const pool = createPool();
+
+    try {
+      const include = query.include?.split(',').map((s) => s.trim()).filter(Boolean);
+      const exclude = query.exclude?.split(',').map((s) => s.trim()).filter(Boolean);
+
+      const result = await getBootstrapContext(pool, {
+        userEmail: query.user_email,
+        include,
+        exclude,
+      });
+
+      return reply.send(result);
+    } finally {
+      await pool.end();
+    }
+  });
+
   // API Capabilities endpoint - Agent-discoverable capability list (Issue #207)
   app.get('/api/capabilities', async () => ({
     name: 'clawdbot-projects',
@@ -327,6 +355,13 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
         endpoints: [
           { method: 'GET', path: '/api/activity', description: 'Get activity feed' },
           { method: 'GET', path: '/api/activity/stream', description: 'SSE stream for real-time updates' },
+        ],
+      },
+      {
+        name: 'bootstrap',
+        description: 'Initialize agent session with full context (preferences, projects, reminders, contacts)',
+        endpoints: [
+          { method: 'GET', path: '/api/bootstrap', description: 'Get complete session context in single call' },
         ],
       },
       {
