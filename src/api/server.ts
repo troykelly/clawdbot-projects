@@ -47,9 +47,11 @@ import {
   getConfiguredProviders,
   syncContacts,
   getContactSyncCursor,
+  validateState,
   OAuthError,
   ProviderNotConfiguredError,
   NoConnectionError,
+  InvalidStateError,
   type OAuthProvider,
 } from './oauth/index.ts';
 
@@ -276,6 +278,8 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
     '/api/cloudflare/email',
     // WebSocket endpoint uses its own auth via query params or cookies
     '/api/ws',
+    // OAuth callback comes from external provider redirect
+    '/api/oauth/callback',
   ]);
 
   // Bearer token authentication hook for API routes
@@ -8956,9 +8960,25 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
       return reply.code(400).send({ error: 'Missing authorization code' });
     }
 
-    // Determine provider from state or query param
-    // In production, you'd store state -> provider mapping in session/cache
-    const provider = (query.provider || 'google') as OAuthProvider;
+    if (!query.state) {
+      return reply.code(400).send({ error: 'Missing OAuth state parameter' });
+    }
+
+    // Validate state and get stored data (provider, codeVerifier)
+    let stateData;
+    try {
+      stateData = validateState(query.state);
+    } catch (error) {
+      if (error instanceof InvalidStateError) {
+        return reply.code(400).send({
+          error: 'Invalid or expired OAuth state',
+          code: 'INVALID_STATE',
+        });
+      }
+      throw error;
+    }
+
+    const provider = stateData.provider;
 
     if (!isProviderConfigured(provider)) {
       return reply.code(503).send({
@@ -8969,8 +8989,8 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
     const pool = createPool();
 
     try {
-      // Exchange code for tokens
-      const tokens = await exchangeCodeForTokens(provider, query.code);
+      // Exchange code for tokens (with PKCE code_verifier)
+      const tokens = await exchangeCodeForTokens(provider, query.code, stateData.codeVerifier);
 
       // Get user email from provider
       const userEmail = await getOAuthUserEmail(provider, tokens.accessToken);

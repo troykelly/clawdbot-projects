@@ -9,18 +9,34 @@ import type {
   OAuthTokens,
   OAuthConnection,
   OAuthAuthorizationUrl,
+  OAuthStateData,
   ProviderContact,
 } from './types.js';
 import {
   OAuthError,
   NoConnectionError,
   TokenExpiredError,
+  InvalidStateError,
 } from './types.js';
 import { requireProviderConfig, isProviderConfigured } from './config.js';
 import * as microsoft from './microsoft.js';
 import * as google from './google.js';
 
 const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000; // 5 minutes buffer
+const STATE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes for state to be valid
+
+// In-memory state storage (in production, use Redis or database)
+const pendingStates = new Map<string, OAuthStateData>();
+
+// Clean up expired states periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [state, data] of pendingStates.entries()) {
+    if (now - data.createdAt.getTime() > STATE_EXPIRY_MS) {
+      pendingStates.delete(state);
+    }
+  }
+}, 60 * 1000); // Check every minute
 
 export function getAuthorizationUrl(
   provider: OAuthProvider,
@@ -29,27 +45,58 @@ export function getAuthorizationUrl(
 ): OAuthAuthorizationUrl {
   const config = requireProviderConfig(provider);
 
+  let result: OAuthAuthorizationUrl;
   switch (provider) {
     case 'microsoft':
-      return microsoft.buildAuthorizationUrl(config, state, scopes);
+      result = microsoft.buildAuthorizationUrl(config, state, scopes);
+      break;
     case 'google':
-      return google.buildAuthorizationUrl(config, state, scopes);
+      result = google.buildAuthorizationUrl(config, state, scopes);
+      break;
     default:
       throw new OAuthError(`Unknown provider: ${provider}`, 'UNKNOWN_PROVIDER', provider);
   }
+
+  // Store state with PKCE code verifier for validation during callback
+  pendingStates.set(state, {
+    provider,
+    codeVerifier: result.codeVerifier,
+    scopes: result.scopes,
+    createdAt: new Date(),
+  });
+
+  return result;
+}
+
+export function validateState(state: string): OAuthStateData {
+  const data = pendingStates.get(state);
+  if (!data) {
+    throw new InvalidStateError();
+  }
+
+  // Check expiry
+  if (Date.now() - data.createdAt.getTime() > STATE_EXPIRY_MS) {
+    pendingStates.delete(state);
+    throw new InvalidStateError();
+  }
+
+  // Remove state (single use)
+  pendingStates.delete(state);
+  return data;
 }
 
 export async function exchangeCodeForTokens(
   provider: OAuthProvider,
-  code: string
+  code: string,
+  codeVerifier?: string
 ): Promise<OAuthTokens> {
   const config = requireProviderConfig(provider);
 
   switch (provider) {
     case 'microsoft':
-      return microsoft.exchangeCodeForTokens(code, config);
+      return microsoft.exchangeCodeForTokens(code, config, codeVerifier);
     case 'google':
-      return google.exchangeCodeForTokens(code, config);
+      return google.exchangeCodeForTokens(code, config, codeVerifier);
     default:
       throw new OAuthError(`Unknown provider: ${provider}`, 'UNKNOWN_PROVIDER', provider);
   }

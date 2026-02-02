@@ -136,16 +136,26 @@ describe('OAuth API Endpoints', () => {
       expect(body.error).toContain('Missing authorization code');
     });
 
-    it('returns error when provider not configured', async () => {
-      delete process.env.GOOGLE_CLIENT_ID;
-      delete process.env.GOOGLE_CLIENT_SECRET;
-
+    it('returns error when state is missing', async () => {
       const response = await app.inject({
         method: 'GET',
-        url: '/api/oauth/callback?code=test-code&provider=google',
+        url: '/api/oauth/callback?code=test-code',
       });
 
-      expect(response.statusCode).toBe(503);
+      expect(response.statusCode).toBe(400);
+      const body = response.json();
+      expect(body.error).toContain('Missing OAuth state');
+    });
+
+    it('returns error when state is invalid', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/oauth/callback?code=test-code&state=invalid-state',
+      });
+
+      expect(response.statusCode).toBe(400);
+      const body = response.json();
+      expect(body.code).toBe('INVALID_STATE');
     });
   });
 

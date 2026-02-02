@@ -38,6 +38,14 @@ export interface OAuthAuthorizationUrl {
   state: string;
   provider: OAuthProvider;
   scopes: string[];
+  codeVerifier: string; // PKCE code verifier (store server-side)
+}
+
+export interface OAuthStateData {
+  provider: OAuthProvider;
+  codeVerifier: string;
+  scopes: string[];
+  createdAt: Date;
 }
 
 export interface OAuthCallbackResult {
@@ -121,5 +129,12 @@ export class NoConnectionError extends OAuthError {
       404
     );
     this.name = 'NoConnectionError';
+  }
+}
+
+export class InvalidStateError extends OAuthError {
+  constructor() {
+    super('Invalid or expired OAuth state', 'INVALID_STATE', undefined, 400);
+    this.name = 'InvalidStateError';
   }
 }

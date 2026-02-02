@@ -17,6 +17,7 @@ export {
   deleteConnection,
   listConnections,
   isProviderConfigured,
+  validateState,
 } from './service.js';
 export { syncContacts, getContactSyncCursor } from './contacts.js';
 export * as microsoft from './microsoft.js';

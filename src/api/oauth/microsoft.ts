@@ -3,9 +3,19 @@
  * Part of Issue #206.
  */
 
+import { createHash, randomBytes } from 'crypto';
 import type { OAuthConfig, OAuthTokens, ProviderContact, OAuthAuthorizationUrl } from './types.js';
 import { OAuthError, TokenRefreshError } from './types.js';
-import { requireProviderConfig, MICROSOFT_SCOPES } from './config.js';
+import { requireProviderConfig } from './config.js';
+
+// PKCE utilities
+function generateCodeVerifier(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+function generateCodeChallenge(verifier: string): string {
+  return createHash('sha256').update(verifier).digest('base64url');
+}
 
 const AUTHORIZE_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize';
 const TOKEN_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
@@ -51,6 +61,8 @@ export function buildAuthorizationUrl(
   scopes?: string[]
 ): OAuthAuthorizationUrl {
   const effectiveScopes = scopes || config.scopes;
+  const codeVerifier = generateCodeVerifier();
+  const codeChallenge = generateCodeChallenge(codeVerifier);
 
   const params = new URLSearchParams({
     client_id: config.clientId,
@@ -59,6 +71,8 @@ export function buildAuthorizationUrl(
     response_mode: 'query',
     scope: effectiveScopes.join(' '),
     state,
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256',
   });
 
   return {
@@ -66,12 +80,14 @@ export function buildAuthorizationUrl(
     state,
     provider: 'microsoft',
     scopes: effectiveScopes,
+    codeVerifier,
   };
 }
 
 export async function exchangeCodeForTokens(
   code: string,
-  config?: OAuthConfig
+  config?: OAuthConfig,
+  codeVerifier?: string
 ): Promise<OAuthTokens> {
   const effectiveConfig = config || requireProviderConfig('microsoft');
 
@@ -83,6 +99,11 @@ export async function exchangeCodeForTokens(
     grant_type: 'authorization_code',
   });
 
+  // Include PKCE code_verifier if provided
+  if (codeVerifier) {
+    params.set('code_verifier', codeVerifier);
+  }
+
   const response = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: {
@@ -93,8 +114,13 @@ export async function exchangeCodeForTokens(
 
   if (!response.ok) {
     const errorText = await response.text();
+    // Log detailed error server-side, return generic message to client
+    console.error('[OAuth] Microsoft token exchange failed:', {
+      status: response.status,
+      error: errorText,
+    });
     throw new OAuthError(
-      `Failed to exchange code for tokens: ${errorText}`,
+      'Failed to complete OAuth authorization',
       'TOKEN_EXCHANGE_FAILED',
       'microsoft',
       response.status
@@ -135,7 +161,12 @@ export async function refreshAccessToken(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new TokenRefreshError('microsoft', errorText);
+    // Log detailed error server-side, return generic message to client
+    console.error('[OAuth] Microsoft token refresh failed:', {
+      status: response.status,
+      error: errorText,
+    });
+    throw new TokenRefreshError('microsoft', 'Token refresh failed');
   }
 
   const data = (await response.json()) as MicrosoftTokenResponse;

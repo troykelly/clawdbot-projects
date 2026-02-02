@@ -3,9 +3,19 @@
  * Part of Issue #206.
  */
 
+import { createHash, randomBytes } from 'crypto';
 import type { OAuthConfig, OAuthTokens, ProviderContact, OAuthAuthorizationUrl } from './types.js';
 import { OAuthError, TokenRefreshError } from './types.js';
 import { requireProviderConfig } from './config.js';
+
+// PKCE utilities
+function generateCodeVerifier(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+function generateCodeChallenge(verifier: string): string {
+  return createHash('sha256').update(verifier).digest('base64url');
+}
 
 const AUTHORIZE_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -70,6 +80,8 @@ export function buildAuthorizationUrl(
   scopes?: string[]
 ): OAuthAuthorizationUrl {
   const effectiveScopes = scopes || config.scopes;
+  const codeVerifier = generateCodeVerifier();
+  const codeChallenge = generateCodeChallenge(codeVerifier);
 
   const params = new URLSearchParams({
     client_id: config.clientId,
@@ -79,6 +91,8 @@ export function buildAuthorizationUrl(
     state,
     access_type: 'offline',
     prompt: 'consent',
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256',
   });
 
   return {
@@ -86,12 +100,14 @@ export function buildAuthorizationUrl(
     state,
     provider: 'google',
     scopes: effectiveScopes,
+    codeVerifier,
   };
 }
 
 export async function exchangeCodeForTokens(
   code: string,
-  config?: OAuthConfig
+  config?: OAuthConfig,
+  codeVerifier?: string
 ): Promise<OAuthTokens> {
   const effectiveConfig = config || requireProviderConfig('google');
 
@@ -103,6 +119,11 @@ export async function exchangeCodeForTokens(
     grant_type: 'authorization_code',
   });
 
+  // Include PKCE code_verifier if provided
+  if (codeVerifier) {
+    params.set('code_verifier', codeVerifier);
+  }
+
   const response = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: {
@@ -113,8 +134,13 @@ export async function exchangeCodeForTokens(
 
   if (!response.ok) {
     const errorText = await response.text();
+    // Log detailed error server-side, return generic message to client
+    console.error('[OAuth] Google token exchange failed:', {
+      status: response.status,
+      error: errorText,
+    });
     throw new OAuthError(
-      `Failed to exchange code for tokens: ${errorText}`,
+      'Failed to complete OAuth authorization',
       'TOKEN_EXCHANGE_FAILED',
       'google',
       response.status
@@ -155,7 +181,12 @@ export async function refreshAccessToken(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new TokenRefreshError('google', errorText);
+    // Log detailed error server-side, return generic message to client
+    console.error('[OAuth] Google token refresh failed:', {
+      status: response.status,
+      error: errorText,
+    });
+    throw new TokenRefreshError('google', 'Token refresh failed');
   }
 
   const data = (await response.json()) as GoogleTokenResponse;

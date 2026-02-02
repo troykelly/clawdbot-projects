@@ -7,6 +7,9 @@ import type { Pool } from 'pg';
 import type { OAuthProvider, ProviderContact, ContactSyncResult } from './types.js';
 import { getValidAccessToken, fetchProviderContacts } from './service.js';
 
+// PostgreSQL error codes
+const PG_UNIQUE_VIOLATION = '23505';
+
 interface LocalContact {
   id: string;
   displayName: string;
@@ -161,8 +164,20 @@ async function addEndpoint(
        ON CONFLICT (endpoint_type, normalized_value) DO NOTHING`,
       [contactId, endpointType, endpointValue]
     );
-  } catch {
-    // Ignore duplicate errors - contact might already have this endpoint
+  } catch (error) {
+    // Only ignore unique constraint violations (expected duplicates)
+    const pgError = error as { code?: string };
+    if (pgError.code === PG_UNIQUE_VIOLATION) {
+      return; // Expected duplicate, ignore
+    }
+    // Log and rethrow unexpected errors
+    console.error('[ContactSync] Endpoint insert failed:', {
+      contactId,
+      endpointType,
+      endpointValue,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
   }
 }
 
