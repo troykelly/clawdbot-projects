@@ -5,7 +5,7 @@ import * as React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { SettingsPage } from '@/ui/components/settings/settings-page';
-import type { UserSettings } from '@/ui/components/settings/types';
+import type { UserSettings, EmbeddingSettings } from '@/ui/components/settings/types';
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -27,19 +27,76 @@ const defaultSettings: UserSettings = {
   updated_at: new Date().toISOString(),
 };
 
+const defaultEmbeddingSettings: EmbeddingSettings = {
+  provider: {
+    name: 'openai',
+    model: 'text-embedding-3-large',
+    dimensions: 3072,
+    status: 'active',
+    keySource: 'environment',
+  },
+  availableProviders: [
+    { name: 'voyageai', configured: false, priority: 1 },
+    { name: 'openai', configured: true, priority: 2 },
+    { name: 'gemini', configured: false, priority: 3 },
+  ],
+  budget: {
+    dailyLimitUsd: 10.0,
+    monthlyLimitUsd: 100.0,
+    todaySpendUsd: 1.5,
+    monthSpendUsd: 15.0,
+    pauseOnLimit: true,
+  },
+  usage: {
+    today: { count: 50, tokens: 10000 },
+    month: { count: 500, tokens: 100000 },
+    total: { count: 2000, tokens: 400000 },
+  },
+};
+
+function createMockFetch(userSettings = defaultSettings, embeddingSettings = defaultEmbeddingSettings) {
+  return (url: string) => {
+    if (url === '/api/settings') {
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(userSettings),
+      });
+    }
+    if (url === '/api/settings/embeddings') {
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(embeddingSettings),
+      });
+    }
+    return Promise.resolve({
+      ok: false,
+      status: 404,
+    });
+  };
+}
+
 describe('SettingsPage', () => {
   beforeEach(() => {
     mockFetch.mockReset();
-    // Default successful fetch
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(defaultSettings),
-    });
+    // Default successful fetch for both endpoints
+    mockFetch.mockImplementation(createMockFetch());
   });
 
   describe('Loading state', () => {
     it('shows loading skeleton initially', () => {
-      mockFetch.mockImplementation(() => new Promise(() => {})); // Never resolves
+      // User settings never resolves (loading state), but embedding settings resolves
+      mockFetch.mockImplementation((url: string) => {
+        if (url === '/api/settings') {
+          return new Promise(() => {}); // Never resolves
+        }
+        if (url === '/api/settings/embeddings') {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve(defaultEmbeddingSettings),
+          });
+        }
+        return Promise.resolve({ ok: false, status: 404 });
+      });
       render(<SettingsPage />);
 
       // Loading state shows skeleton elements
@@ -49,9 +106,17 @@ describe('SettingsPage', () => {
 
   describe('Error state', () => {
     it('shows error state on fetch failure', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 500,
+      mockFetch.mockImplementation((url: string) => {
+        if (url === '/api/settings') {
+          return Promise.resolve({ ok: false, status: 500 });
+        }
+        if (url === '/api/settings/embeddings') {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve(defaultEmbeddingSettings),
+          });
+        }
+        return Promise.resolve({ ok: false, status: 404 });
       });
 
       render(<SettingsPage />);
@@ -62,9 +127,17 @@ describe('SettingsPage', () => {
     });
 
     it('shows unauthorized message on 401', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 401,
+      mockFetch.mockImplementation((url: string) => {
+        if (url === '/api/settings') {
+          return Promise.resolve({ ok: false, status: 401 });
+        }
+        if (url === '/api/settings/embeddings') {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve(defaultEmbeddingSettings),
+          });
+        }
+        return Promise.resolve({ ok: false, status: 404 });
       });
 
       render(<SettingsPage />);
@@ -101,15 +174,29 @@ describe('SettingsPage', () => {
     });
 
     it('updates theme when selected', async () => {
-      mockFetch
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve(defaultSettings),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ ...defaultSettings, theme: 'dark' }),
-        });
+      let patchCalled = false;
+      mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+        if (url === '/api/settings' && options?.method === 'PATCH') {
+          patchCalled = true;
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ ...defaultSettings, theme: 'dark' }),
+          });
+        }
+        if (url === '/api/settings') {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve(defaultSettings),
+          });
+        }
+        if (url === '/api/settings/embeddings') {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve(defaultEmbeddingSettings),
+          });
+        }
+        return Promise.resolve({ ok: false, status: 404 });
+      });
 
       render(<SettingsPage />);
 
@@ -176,15 +263,27 @@ describe('SettingsPage', () => {
     });
 
     it('toggles sidebar collapsed setting', async () => {
-      mockFetch
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve(defaultSettings),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ ...defaultSettings, sidebar_collapsed: true }),
-        });
+      mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+        if (url === '/api/settings' && options?.method === 'PATCH') {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ ...defaultSettings, sidebar_collapsed: true }),
+          });
+        }
+        if (url === '/api/settings') {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve(defaultSettings),
+          });
+        }
+        if (url === '/api/settings/embeddings') {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve(defaultEmbeddingSettings),
+          });
+        }
+        return Promise.resolve({ ok: false, status: 404 });
+      });
 
       render(<SettingsPage />);
 
@@ -264,10 +363,7 @@ describe('SettingsPage', () => {
 describe('useSettings hook behavior', () => {
   beforeEach(() => {
     mockFetch.mockReset();
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(defaultSettings),
-    });
+    mockFetch.mockImplementation(createMockFetch());
   });
 
   it('fetches settings on mount', async () => {
@@ -279,24 +375,35 @@ describe('useSettings hook behavior', () => {
   });
 
   it('handles optimistic updates', async () => {
-    mockFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve(defaultSettings),
-      })
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) =>
-            setTimeout(
-              () =>
-                resolve({
-                  ok: true,
-                  json: () => Promise.resolve({ ...defaultSettings, theme: 'dark' }),
-                }),
-              100
-            )
+    let patchCalled = false;
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (url === '/api/settings' && options?.method === 'PATCH') {
+        patchCalled = true;
+        return new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                ok: true,
+                json: () => Promise.resolve({ ...defaultSettings, theme: 'dark' }),
+              }),
+            100
           )
-      );
+        );
+      }
+      if (url === '/api/settings') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(defaultSettings),
+        });
+      }
+      if (url === '/api/settings/embeddings') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(defaultEmbeddingSettings),
+        });
+      }
+      return Promise.resolve({ ok: false, status: 404 });
+    });
 
     render(<SettingsPage />);
 
