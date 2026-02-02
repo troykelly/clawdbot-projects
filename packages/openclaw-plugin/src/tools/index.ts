@@ -76,8 +76,26 @@ export {
   type TodoToolOptions,
 } from './todos.js'
 
-// Contact tools (to be implemented in #247)
-// export * from './contacts.js'
+// Contact tools
+export {
+  createContactSearchTool,
+  createContactGetTool,
+  createContactCreateTool,
+  ContactSearchParamsSchema,
+  ContactGetParamsSchema,
+  ContactCreateParamsSchema,
+  type ContactSearchParams,
+  type ContactGetParams,
+  type ContactCreateParams,
+  type ContactSearchTool,
+  type ContactGetTool,
+  type ContactCreateTool,
+  type ContactSearchResult,
+  type ContactGetResult,
+  type ContactCreateResult,
+  type Contact,
+  type ContactToolOptions,
+} from './contacts.js'
 
 /** Tool factory types */
 export interface ToolFactoryOptions {

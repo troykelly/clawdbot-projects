@@ -20,6 +20,9 @@ import {
   createTodoListTool,
   createTodoCreateTool,
   createTodoCompleteTool,
+  createContactSearchTool,
+  createContactGetTool,
+  createContactCreateTool,
   type MemoryRecallTool,
   type MemoryStoreTool,
   type MemoryForgetTool,
@@ -29,6 +32,9 @@ import {
   type TodoListTool,
   type TodoCreateTool,
   type TodoCompleteTool,
+  type ContactSearchTool,
+  type ContactGetTool,
+  type ContactCreateTool,
 } from './tools/index.js'
 
 /** Plugin registration context from OpenClaw runtime */
@@ -49,6 +55,9 @@ export interface PluginTools {
   todoList: TodoListTool
   todoCreate: TodoCreateTool
   todoComplete: TodoCompleteTool
+  contactSearch: ContactSearchTool
+  contactGet: ContactGetTool
+  contactCreate: ContactCreateTool
 }
 
 /** Plugin instance after registration */
@@ -143,6 +152,24 @@ export function register(ctx: RegistrationContext): PluginInstance {
       config,
       userId,
     }),
+    contactSearch: createContactSearchTool({
+      client: apiClient,
+      logger,
+      config,
+      userId,
+    }),
+    contactGet: createContactGetTool({
+      client: apiClient,
+      logger,
+      config,
+      userId,
+    }),
+    contactCreate: createContactCreateTool({
+      client: apiClient,
+      logger,
+      config,
+      userId,
+    }),
   }
 
   logger.info('Plugin registered', {
@@ -220,6 +247,17 @@ export type {
   TodoCompleteResult,
   Todo,
   TodoToolOptions,
+  ContactSearchTool,
+  ContactGetTool,
+  ContactCreateTool,
+  ContactSearchParams,
+  ContactGetParams,
+  ContactCreateParams,
+  ContactSearchResult,
+  ContactGetResult,
+  ContactCreateResult,
+  Contact,
+  ContactToolOptions,
 } from './tools/index.js'
 export {
   createMemoryRecallTool,
@@ -231,6 +269,9 @@ export {
   createTodoListTool,
   createTodoCreateTool,
   createTodoCompleteTool,
+  createContactSearchTool,
+  createContactGetTool,
+  createContactCreateTool,
   MemoryRecallParamsSchema,
   MemoryStoreParamsSchema,
   MemoryForgetParamsSchema,
@@ -242,4 +283,7 @@ export {
   TodoListParamsSchema,
   TodoCreateParamsSchema,
   TodoCompleteParamsSchema,
+  ContactSearchParamsSchema,
+  ContactGetParamsSchema,
+  ContactCreateParamsSchema,
 } from './tools/index.js'
