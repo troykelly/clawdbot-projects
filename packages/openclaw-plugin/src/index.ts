@@ -10,7 +10,12 @@ import { validateConfig } from './config.js'
 import { createLogger, type Logger } from './logger.js'
 import { createApiClient, type ApiClient } from './api-client.js'
 import { extractContext, getUserScopeKey, type PluginContext } from './context.js'
-import { createMemoryRecallTool, type MemoryRecallTool } from './tools/index.js'
+import {
+  createMemoryRecallTool,
+  createMemoryStoreTool,
+  type MemoryRecallTool,
+  type MemoryStoreTool,
+} from './tools/index.js'
 
 /** Plugin registration context from OpenClaw runtime */
 export interface RegistrationContext {
@@ -22,6 +27,7 @@ export interface RegistrationContext {
 /** Tool instances created for the plugin */
 export interface PluginTools {
   memoryRecall: MemoryRecallTool
+  memoryStore: MemoryStoreTool
 }
 
 /** Plugin instance after registration */
@@ -63,6 +69,12 @@ export function register(ctx: RegistrationContext): PluginInstance {
   // Create tools
   const tools: PluginTools = {
     memoryRecall: createMemoryRecallTool({
+      client: apiClient,
+      logger,
+      config,
+      userId,
+    }),
+    memoryStore: createMemoryStoreTool({
       client: apiClient,
       logger,
       config,
@@ -116,5 +128,15 @@ export type {
   MemoryRecallParams,
   MemoryRecallResult,
   Memory,
+  MemoryStoreTool,
+  MemoryStoreParams,
+  MemoryStoreResult,
+  StoredMemory,
 } from './tools/index.js'
-export { createMemoryRecallTool, MemoryRecallParamsSchema, MemoryCategory } from './tools/index.js'
+export {
+  createMemoryRecallTool,
+  createMemoryStoreTool,
+  MemoryRecallParamsSchema,
+  MemoryStoreParamsSchema,
+  MemoryCategory,
+} from './tools/index.js'
