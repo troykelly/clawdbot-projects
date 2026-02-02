@@ -24,8 +24,14 @@ export {
   type StoredMemory,
 } from './memory-store.js'
 
-// memory_forget tool (to be implemented in #244)
-// export * from './memory-forget.js'
+// memory_forget tool
+export {
+  createMemoryForgetTool,
+  MemoryForgetParamsSchema,
+  type MemoryForgetParams,
+  type MemoryForgetTool,
+  type MemoryForgetResult,
+} from './memory-forget.js'
 
 // Project tools (to be implemented in #245)
 // export * from './projects.js'

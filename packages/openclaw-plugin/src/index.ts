@@ -13,8 +13,10 @@ import { extractContext, getUserScopeKey, type PluginContext } from './context.j
 import {
   createMemoryRecallTool,
   createMemoryStoreTool,
+  createMemoryForgetTool,
   type MemoryRecallTool,
   type MemoryStoreTool,
+  type MemoryForgetTool,
 } from './tools/index.js'
 
 /** Plugin registration context from OpenClaw runtime */
@@ -28,6 +30,7 @@ export interface RegistrationContext {
 export interface PluginTools {
   memoryRecall: MemoryRecallTool
   memoryStore: MemoryStoreTool
+  memoryForget: MemoryForgetTool
 }
 
 /** Plugin instance after registration */
@@ -75,6 +78,12 @@ export function register(ctx: RegistrationContext): PluginInstance {
       userId,
     }),
     memoryStore: createMemoryStoreTool({
+      client: apiClient,
+      logger,
+      config,
+      userId,
+    }),
+    memoryForget: createMemoryForgetTool({
       client: apiClient,
       logger,
       config,
@@ -132,11 +141,16 @@ export type {
   MemoryStoreParams,
   MemoryStoreResult,
   StoredMemory,
+  MemoryForgetTool,
+  MemoryForgetParams,
+  MemoryForgetResult,
 } from './tools/index.js'
 export {
   createMemoryRecallTool,
   createMemoryStoreTool,
+  createMemoryForgetTool,
   MemoryRecallParamsSchema,
   MemoryStoreParamsSchema,
+  MemoryForgetParamsSchema,
   MemoryCategory,
 } from './tools/index.js'
