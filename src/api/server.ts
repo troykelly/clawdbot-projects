@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
 import formbody from '@fastify/formbody';
+import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import rateLimit from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
@@ -23,6 +24,19 @@ import { processTwilioSms, type TwilioSmsWebhookPayload } from './twilio/index.t
 import { processPostmarkEmail, type PostmarkInboundPayload } from './postmark/index.ts';
 import { processCloudflareEmail, type CloudflareEmailPayload } from './cloudflare-email/index.ts';
 import { RealtimeHub } from './realtime/index.ts';
+import {
+  S3Storage,
+  createS3StorageFromEnv,
+  uploadFile,
+  downloadFile,
+  getFileUrl,
+  deleteFile,
+  listFiles,
+  getFileMetadata,
+  FileTooLargeError,
+  FileNotFoundError,
+  DEFAULT_MAX_FILE_SIZE_BYTES,
+} from './file-storage/index.ts';
 
 export type ProjectsApiOptions = {
   logger?: boolean;
@@ -40,6 +54,14 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
 
   // Support URL-encoded form bodies (used by Twilio webhooks)
   app.register(formbody);
+
+  // Multipart support for file uploads (Issue #215)
+  const maxFileSize = parseInt(process.env.MAX_FILE_SIZE_BYTES || String(DEFAULT_MAX_FILE_SIZE_BYTES), 10);
+  app.register(multipart, {
+    limits: {
+      fileSize: maxFileSize,
+    },
+  });
 
   // WebSocket support for real-time updates (Issue #213)
   app.register(websocket);
@@ -396,7 +418,7 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
       realtimeHub.removeClient(clientId);
     });
 
-    socket.on('error', (err) => {
+    socket.on('error', (err: Error) => {
       console.error(`[WebSocket] Client ${clientId} error:`, err);
       realtimeHub.removeClient(clientId);
     });
@@ -2864,6 +2886,327 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
       contactsPurged,
       totalPurged: workItemsPurged + contactsPurged,
     });
+  });
+
+  // ============================================
+  // File Storage API Endpoints (Issue #215)
+  // ============================================
+
+  // Get file storage instance (lazy initialization)
+  let fileStorage: S3Storage | null = null;
+  function getFileStorage(): S3Storage | null {
+    if (fileStorage === null) {
+      fileStorage = createS3StorageFromEnv();
+    }
+    return fileStorage;
+  }
+
+  // POST /api/files/upload - Upload a file
+  app.post('/api/files/upload', async (req, reply) => {
+    const storage = getFileStorage();
+    if (!storage) {
+      return reply.code(503).send({
+        error: 'File storage not configured',
+        message: 'S3 storage environment variables are not set',
+      });
+    }
+
+    try {
+      const data = await req.file();
+      if (!data) {
+        return reply.code(400).send({ error: 'No file uploaded' });
+      }
+
+      const buffer = await data.toBuffer();
+      const pool = createPool();
+
+      try {
+        const email = await getSessionEmail(req);
+        const result = await uploadFile(pool, storage, {
+          filename: data.filename,
+          contentType: data.mimetype,
+          data: buffer,
+          uploadedBy: email || undefined,
+        }, maxFileSize);
+
+        await pool.end();
+
+        return reply.code(201).send(result);
+      } catch (error) {
+        await pool.end();
+
+        if (error instanceof FileTooLargeError) {
+          return reply.code(413).send({
+            error: 'File too large',
+            message: error.message,
+            maxSizeBytes: error.maxSizeBytes,
+          });
+        }
+
+        throw error;
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('request file too large')) {
+        return reply.code(413).send({
+          error: 'File too large',
+          message: `File exceeds maximum size of ${maxFileSize} bytes`,
+          maxSizeBytes: maxFileSize,
+        });
+      }
+      throw error;
+    }
+  });
+
+  // GET /api/files - List files
+  app.get('/api/files', async (req, reply) => {
+    const query = req.query as {
+      limit?: string;
+      offset?: string;
+      uploadedBy?: string;
+    };
+
+    const pool = createPool();
+    const result = await listFiles(pool, {
+      limit: query.limit ? parseInt(query.limit, 10) : undefined,
+      offset: query.offset ? parseInt(query.offset, 10) : undefined,
+      uploadedBy: query.uploadedBy,
+    });
+    await pool.end();
+
+    return reply.send(result);
+  });
+
+  // GET /api/files/:id - Download a file
+  app.get('/api/files/:id', async (req, reply) => {
+    const storage = getFileStorage();
+    if (!storage) {
+      return reply.code(503).send({
+        error: 'File storage not configured',
+        message: 'S3 storage environment variables are not set',
+      });
+    }
+
+    const params = req.params as { id: string };
+    const pool = createPool();
+
+    try {
+      const result = await downloadFile(pool, storage, params.id);
+      await pool.end();
+
+      return reply
+        .code(200)
+        .header('Content-Type', result.metadata.contentType)
+        .header('Content-Disposition', `attachment; filename="${result.metadata.originalFilename}"`)
+        .header('Content-Length', result.data.length)
+        .send(result.data);
+    } catch (error) {
+      await pool.end();
+
+      if (error instanceof FileNotFoundError) {
+        return reply.code(404).send({ error: 'File not found' });
+      }
+
+      throw error;
+    }
+  });
+
+  // GET /api/files/:id/metadata - Get file metadata
+  app.get('/api/files/:id/metadata', async (req, reply) => {
+    const params = req.params as { id: string };
+    const pool = createPool();
+
+    const metadata = await getFileMetadata(pool, params.id);
+    await pool.end();
+
+    if (!metadata) {
+      return reply.code(404).send({ error: 'File not found' });
+    }
+
+    return reply.send(metadata);
+  });
+
+  // GET /api/files/:id/url - Get a signed URL for a file
+  app.get('/api/files/:id/url', async (req, reply) => {
+    const storage = getFileStorage();
+    if (!storage) {
+      return reply.code(503).send({
+        error: 'File storage not configured',
+        message: 'S3 storage environment variables are not set',
+      });
+    }
+
+    const params = req.params as { id: string };
+    const query = req.query as { expiresIn?: string };
+    const expiresIn = query.expiresIn ? parseInt(query.expiresIn, 10) : 3600;
+
+    if (expiresIn < 60 || expiresIn > 86400) {
+      return reply.code(400).send({
+        error: 'Invalid expiresIn',
+        message: 'expiresIn must be between 60 and 86400 seconds',
+      });
+    }
+
+    const pool = createPool();
+
+    try {
+      const result = await getFileUrl(pool, storage, params.id, expiresIn);
+      await pool.end();
+
+      return reply.send({
+        url: result.url,
+        expiresIn,
+        filename: result.metadata.originalFilename,
+        contentType: result.metadata.contentType,
+      });
+    } catch (error) {
+      await pool.end();
+
+      if (error instanceof FileNotFoundError) {
+        return reply.code(404).send({ error: 'File not found' });
+      }
+
+      throw error;
+    }
+  });
+
+  // DELETE /api/files/:id - Delete a file
+  app.delete('/api/files/:id', async (req, reply) => {
+    const storage = getFileStorage();
+    if (!storage) {
+      return reply.code(503).send({
+        error: 'File storage not configured',
+        message: 'S3 storage environment variables are not set',
+      });
+    }
+
+    const params = req.params as { id: string };
+    const pool = createPool();
+
+    try {
+      const deleted = await deleteFile(pool, storage, params.id);
+      await pool.end();
+
+      if (!deleted) {
+        return reply.code(404).send({ error: 'File not found' });
+      }
+
+      return reply.code(204).send();
+    } catch (error) {
+      await pool.end();
+      throw error;
+    }
+  });
+
+  // ============================================
+  // Work Item Attachments (Issue #215)
+  // ============================================
+
+  // POST /api/work-items/:id/attachments - Attach a file to a work item
+  app.post('/api/work-items/:id/attachments', async (req, reply) => {
+    const params = req.params as { id: string };
+    const body = req.body as { fileId: string };
+
+    if (!body.fileId) {
+      return reply.code(400).send({ error: 'fileId is required' });
+    }
+
+    const pool = createPool();
+
+    // Check if work item exists
+    const wiResult = await pool.query(
+      'SELECT id FROM work_item WHERE id = $1 AND deleted_at IS NULL',
+      [params.id]
+    );
+    if (wiResult.rowCount === 0) {
+      await pool.end();
+      return reply.code(404).send({ error: 'Work item not found' });
+    }
+
+    // Check if file exists
+    const fileResult = await pool.query(
+      'SELECT id FROM file_attachment WHERE id = $1',
+      [body.fileId]
+    );
+    if (fileResult.rowCount === 0) {
+      await pool.end();
+      return reply.code(404).send({ error: 'File not found' });
+    }
+
+    // Create attachment link
+    const email = await getSessionEmail(req);
+    try {
+      await pool.query(
+        `INSERT INTO work_item_attachment (work_item_id, file_attachment_id, attached_by)
+         VALUES ($1, $2, $3)
+         ON CONFLICT DO NOTHING`,
+        [params.id, body.fileId, email]
+      );
+      await pool.end();
+
+      return reply.code(201).send({
+        workItemId: params.id,
+        fileId: body.fileId,
+        attached: true,
+      });
+    } catch (error) {
+      await pool.end();
+      throw error;
+    }
+  });
+
+  // GET /api/work-items/:id/attachments - List work item attachments
+  app.get('/api/work-items/:id/attachments', async (req, reply) => {
+    const params = req.params as { id: string };
+    const pool = createPool();
+
+    const result = await pool.query(
+      `SELECT
+        fa.id::text,
+        fa.original_filename,
+        fa.content_type,
+        fa.size_bytes,
+        fa.created_at,
+        wia.attached_at,
+        wia.attached_by
+      FROM work_item_attachment wia
+      JOIN file_attachment fa ON fa.id = wia.file_attachment_id
+      WHERE wia.work_item_id = $1
+      ORDER BY wia.attached_at DESC`,
+      [params.id]
+    );
+    await pool.end();
+
+    return reply.send({
+      attachments: result.rows.map(row => ({
+        id: row.id,
+        originalFilename: row.original_filename,
+        contentType: row.content_type,
+        sizeBytes: parseInt(row.size_bytes, 10),
+        createdAt: row.created_at,
+        attachedAt: row.attached_at,
+        attachedBy: row.attached_by,
+      })),
+    });
+  });
+
+  // DELETE /api/work-items/:workItemId/attachments/:fileId - Remove attachment from work item
+  app.delete('/api/work-items/:workItemId/attachments/:fileId', async (req, reply) => {
+    const params = req.params as { workItemId: string; fileId: string };
+    const pool = createPool();
+
+    const result = await pool.query(
+      `DELETE FROM work_item_attachment
+       WHERE work_item_id = $1 AND file_attachment_id = $2
+       RETURNING work_item_id`,
+      [params.workItemId, params.fileId]
+    );
+    await pool.end();
+
+    if (result.rowCount === 0) {
+      return reply.code(404).send({ error: 'Attachment not found' });
+    }
+
+    return reply.code(204).send();
   });
 
   // GET /api/work-items/:id/recurrence - Get recurrence details (Issue #217)

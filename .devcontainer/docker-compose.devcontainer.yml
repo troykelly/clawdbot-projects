@@ -36,5 +36,23 @@ services:
       timeout: 5s
       retries: 10
 
+  minio:
+    image: minio/minio:latest
+    environment:
+      MINIO_ROOT_USER: clawdbot
+      MINIO_ROOT_PASSWORD: clawdbot123
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - clawdbot_projects_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   clawdbot_projects_postgres_data:
+  clawdbot_projects_minio_data:
