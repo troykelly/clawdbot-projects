@@ -43,6 +43,9 @@ const APPLICATION_TABLES = [
   'work_item_external_link',
   'work_item_communication',
   'work_item_contact',
+  'work_item_attachment',
+  'message_attachment',
+  'memory_attachment',
   'external_message',
   'external_thread',
   'contact_endpoint',
@@ -58,6 +61,8 @@ const APPLICATION_TABLES = [
   // Async/queue tables (no FKs today, but still want consistent cleanup)
   'webhook_outbox',
   'internal_job',
+  // File storage
+  'file_attachment',
   // Parents
   'memory',
   'work_item_memory',

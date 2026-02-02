@@ -44,11 +44,13 @@ export interface AgentHookPayload {
   model?: string;
   timeoutSeconds?: number;
   context: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 export interface WakeHookPayload {
   text: string;
   mode?: 'now' | 'schedule';
+  [key: string]: unknown;
 }
 
 export interface WebhookDispatchResult {
