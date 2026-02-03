@@ -1,8 +1,8 @@
 {
-  "name": "clawdbot-projects",
+  "name": "openclaw-projects",
   "dockerComposeFile": "docker-compose.devcontainer.yml",
   "service": "workspace",
-  "workspaceFolder": "/workspaces/clawdbot-projects",
+  "workspaceFolder": "/workspaces/openclaw-projects",
   "shutdownAction": "stopCompose",
   "remoteUser": "vscode",
   "postCreateCommand": "bash .devcontainer/postCreate.sh",

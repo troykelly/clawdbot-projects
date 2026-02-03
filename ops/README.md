@@ -6,18 +6,18 @@ This repo includes a **production** Docker Compose file: `docker-compose.prod.ym
 
 Recommended layout:
 
-- `/opt/clawdbot-projects/` (repo checkout)
-- `/opt/clawdbot-projects/.env` (secrets + config; **not** committed)
+- `/opt/openclaw-projects/` (repo checkout)
+- `/opt/openclaw-projects/.env` (secrets + config; **not** committed)
 - Docker volume `postgres_data` (created automatically)
 
 Example:
 
 ```bash
-sudo mkdir -p /opt/clawdbot-projects
-sudo chown -R $USER:$USER /opt/clawdbot-projects
-cd /opt/clawdbot-projects
+sudo mkdir -p /opt/openclaw-projects
+sudo chown -R $USER:$USER /opt/openclaw-projects
+cd /opt/openclaw-projects
 
-git clone https://github.com/troykelly/clawdbot-projects.git .
+git clone https://github.com/troykelly/openclaw-projects.git .
 git checkout main
 
 cp .env.example .env

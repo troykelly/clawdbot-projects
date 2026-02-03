@@ -16,24 +16,24 @@ import { join } from 'node:path';
  * - Skip auth for health endpoints
  * - Skip auth for webhook endpoints (they have their own signatures)
  * - Return 401 Unauthorized on invalid/missing secret
- * - Allow disabling auth with CLAWDBOT_AUTH_DISABLED=true
+ * - Allow disabling auth with OPENCLAW_PROJECTS_AUTH_DISABLED=true
  */
 
 // These tests manage their own auth environment, so we need to unset the
-// CLAWDBOT_AUTH_DISABLED that the setup-api.ts file sets.
-const originalAuthDisabled = process.env.CLAWDBOT_AUTH_DISABLED;
+// OPENCLAW_PROJECTS_AUTH_DISABLED that the setup-api.ts file sets.
+const originalAuthDisabled = process.env.OPENCLAW_PROJECTS_AUTH_DISABLED;
 
 describe('Shared secret authentication', () => {
   beforeAll(async () => {
     await runMigrate('up');
     // Unset the auth disabled flag that setup-api.ts sets
-    delete process.env.CLAWDBOT_AUTH_DISABLED;
+    delete process.env.OPENCLAW_PROJECTS_AUTH_DISABLED;
   });
 
   afterAll(() => {
     // Restore the original value
     if (originalAuthDisabled !== undefined) {
-      process.env.CLAWDBOT_AUTH_DISABLED = originalAuthDisabled;
+      process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = originalAuthDisabled;
     }
   });
 
@@ -46,33 +46,33 @@ describe('Shared secret authentication', () => {
       // Clear the cached secret so each test starts fresh
       clearCachedSecret();
       // Reset env vars for this test
-      delete process.env.CLAWDBOT_AUTH_SECRET;
-      delete process.env.CLAWDBOT_AUTH_SECRET_FILE;
-      delete process.env.CLAWDBOT_AUTH_SECRET_COMMAND;
-      delete process.env.CLAWDBOT_AUTH_DISABLED;
+      delete process.env.OPENCLAW_PROJECTS_AUTH_SECRET;
+      delete process.env.OPENCLAW_PROJECTS_AUTH_SECRET_FILE;
+      delete process.env.OPENCLAW_PROJECTS_AUTH_SECRET_COMMAND;
+      delete process.env.OPENCLAW_PROJECTS_AUTH_DISABLED;
     });
 
     afterEach(() => {
       // Restore original env
-      process.env.CLAWDBOT_AUTH_SECRET = originalEnv.CLAWDBOT_AUTH_SECRET;
-      process.env.CLAWDBOT_AUTH_SECRET_FILE = originalEnv.CLAWDBOT_AUTH_SECRET_FILE;
-      process.env.CLAWDBOT_AUTH_SECRET_COMMAND = originalEnv.CLAWDBOT_AUTH_SECRET_COMMAND;
-      process.env.CLAWDBOT_AUTH_DISABLED = originalEnv.CLAWDBOT_AUTH_DISABLED;
+      process.env.OPENCLAW_PROJECTS_AUTH_SECRET = originalEnv.OPENCLAW_PROJECTS_AUTH_SECRET;
+      process.env.OPENCLAW_PROJECTS_AUTH_SECRET_FILE = originalEnv.OPENCLAW_PROJECTS_AUTH_SECRET_FILE;
+      process.env.OPENCLAW_PROJECTS_AUTH_SECRET_COMMAND = originalEnv.OPENCLAW_PROJECTS_AUTH_SECRET_COMMAND;
+      process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = originalEnv.OPENCLAW_PROJECTS_AUTH_DISABLED;
       clearCachedSecret();
     });
 
-    it('loads secret from CLAWDBOT_AUTH_SECRET env variable', async () => {
-      process.env.CLAWDBOT_AUTH_SECRET = 'test-secret-from-env';
+    it('loads secret from OPENCLAW_PROJECTS_AUTH_SECRET env variable', async () => {
+      process.env.OPENCLAW_PROJECTS_AUTH_SECRET = 'test-secret-from-env';
       const { loadSecret } = await import('../src/api/auth/secret.js');
       expect(loadSecret()).toBe('test-secret-from-env');
     });
 
-    it('loads secret from file via CLAWDBOT_AUTH_SECRET_FILE', async () => {
-      const secretFile = join(tmpdir(), `clawdbot-test-secret-${Date.now()}.txt`);
+    it('loads secret from file via OPENCLAW_PROJECTS_AUTH_SECRET_FILE', async () => {
+      const secretFile = join(tmpdir(), `openclaw-test-secret-${Date.now()}.txt`);
       writeFileSync(secretFile, 'secret-from-file\n');
 
       try {
-        process.env.CLAWDBOT_AUTH_SECRET_FILE = secretFile;
+        process.env.OPENCLAW_PROJECTS_AUTH_SECRET_FILE = secretFile;
         const { loadSecret } = await import('../src/api/auth/secret.js');
         expect(loadSecret()).toBe('secret-from-file');
       } finally {
@@ -80,20 +80,20 @@ describe('Shared secret authentication', () => {
       }
     });
 
-    it('loads secret from command via CLAWDBOT_AUTH_SECRET_COMMAND', async () => {
-      process.env.CLAWDBOT_AUTH_SECRET_COMMAND = 'echo secret-from-command';
+    it('loads secret from command via OPENCLAW_PROJECTS_AUTH_SECRET_COMMAND', async () => {
+      process.env.OPENCLAW_PROJECTS_AUTH_SECRET_COMMAND = 'echo secret-from-command';
       const { loadSecret } = await import('../src/api/auth/secret.js');
       expect(loadSecret()).toBe('secret-from-command');
     });
 
     it('prioritizes COMMAND over FILE over direct value', async () => {
-      const secretFile = join(tmpdir(), `clawdbot-test-priority-${Date.now()}.txt`);
+      const secretFile = join(tmpdir(), `openclaw-test-priority-${Date.now()}.txt`);
       writeFileSync(secretFile, 'secret-from-file');
 
       try {
-        process.env.CLAWDBOT_AUTH_SECRET = 'secret-from-env';
-        process.env.CLAWDBOT_AUTH_SECRET_FILE = secretFile;
-        process.env.CLAWDBOT_AUTH_SECRET_COMMAND = 'echo secret-from-command';
+        process.env.OPENCLAW_PROJECTS_AUTH_SECRET = 'secret-from-env';
+        process.env.OPENCLAW_PROJECTS_AUTH_SECRET_FILE = secretFile;
+        process.env.OPENCLAW_PROJECTS_AUTH_SECRET_COMMAND = 'echo secret-from-command';
 
         const { loadSecret } = await import('../src/api/auth/secret.js');
         // Command has highest priority
@@ -104,12 +104,12 @@ describe('Shared secret authentication', () => {
     });
 
     it('falls back to FILE when COMMAND is not set', async () => {
-      const secretFile = join(tmpdir(), `clawdbot-test-fallback-${Date.now()}.txt`);
+      const secretFile = join(tmpdir(), `openclaw-test-fallback-${Date.now()}.txt`);
       writeFileSync(secretFile, 'secret-from-file');
 
       try {
-        process.env.CLAWDBOT_AUTH_SECRET = 'secret-from-env';
-        process.env.CLAWDBOT_AUTH_SECRET_FILE = secretFile;
+        process.env.OPENCLAW_PROJECTS_AUTH_SECRET = 'secret-from-env';
+        process.env.OPENCLAW_PROJECTS_AUTH_SECRET_FILE = secretFile;
         // No COMMAND set
 
         const { loadSecret } = await import('../src/api/auth/secret.js');
@@ -120,7 +120,7 @@ describe('Shared secret authentication', () => {
     });
 
     it('trims whitespace from secrets', async () => {
-      process.env.CLAWDBOT_AUTH_SECRET = '  trimmed-secret  \n';
+      process.env.OPENCLAW_PROJECTS_AUTH_SECRET = '  trimmed-secret  \n';
       const { loadSecret } = await import('../src/api/auth/secret.js');
       expect(loadSecret()).toBe('trimmed-secret');
     });
@@ -138,14 +138,14 @@ describe('Shared secret authentication', () => {
     beforeEach(() => {
       // Clear the cached secret so each test starts fresh
       clearCachedSecret();
-      process.env.CLAWDBOT_AUTH_SECRET = TEST_SECRET;
-      delete process.env.CLAWDBOT_AUTH_DISABLED;
+      process.env.OPENCLAW_PROJECTS_AUTH_SECRET = TEST_SECRET;
+      delete process.env.OPENCLAW_PROJECTS_AUTH_DISABLED;
     });
 
     afterEach(async () => {
       // Restore original env
-      process.env.CLAWDBOT_AUTH_SECRET = originalEnv.CLAWDBOT_AUTH_SECRET;
-      process.env.CLAWDBOT_AUTH_DISABLED = originalEnv.CLAWDBOT_AUTH_DISABLED;
+      process.env.OPENCLAW_PROJECTS_AUTH_SECRET = originalEnv.OPENCLAW_PROJECTS_AUTH_SECRET;
+      process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = originalEnv.OPENCLAW_PROJECTS_AUTH_DISABLED;
       clearCachedSecret();
       // Reset realtime hub to clean up PostgreSQL connections
       await resetRealtimeHub();
@@ -234,13 +234,13 @@ describe('Shared secret authentication', () => {
 
     beforeEach(() => {
       clearCachedSecret();
-      process.env.CLAWDBOT_AUTH_SECRET = 'some-secret';
-      delete process.env.CLAWDBOT_AUTH_DISABLED;
+      process.env.OPENCLAW_PROJECTS_AUTH_SECRET = 'some-secret';
+      delete process.env.OPENCLAW_PROJECTS_AUTH_DISABLED;
     });
 
     afterEach(async () => {
-      process.env.CLAWDBOT_AUTH_SECRET = originalEnv.CLAWDBOT_AUTH_SECRET;
-      process.env.CLAWDBOT_AUTH_DISABLED = originalEnv.CLAWDBOT_AUTH_DISABLED;
+      process.env.OPENCLAW_PROJECTS_AUTH_SECRET = originalEnv.OPENCLAW_PROJECTS_AUTH_SECRET;
+      process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = originalEnv.OPENCLAW_PROJECTS_AUTH_DISABLED;
       clearCachedSecret();
       await resetRealtimeHub();
     });
@@ -317,13 +317,13 @@ describe('Shared secret authentication', () => {
 
     beforeEach(() => {
       clearCachedSecret();
-      process.env.CLAWDBOT_AUTH_SECRET = 'some-secret';
-      delete process.env.CLAWDBOT_AUTH_DISABLED;
+      process.env.OPENCLAW_PROJECTS_AUTH_SECRET = 'some-secret';
+      delete process.env.OPENCLAW_PROJECTS_AUTH_DISABLED;
     });
 
     afterEach(async () => {
-      process.env.CLAWDBOT_AUTH_SECRET = originalEnv.CLAWDBOT_AUTH_SECRET;
-      process.env.CLAWDBOT_AUTH_DISABLED = originalEnv.CLAWDBOT_AUTH_DISABLED;
+      process.env.OPENCLAW_PROJECTS_AUTH_SECRET = originalEnv.OPENCLAW_PROJECTS_AUTH_SECRET;
+      process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = originalEnv.OPENCLAW_PROJECTS_AUTH_DISABLED;
       clearCachedSecret();
       await resetRealtimeHub();
     });
@@ -370,18 +370,18 @@ describe('Shared secret authentication', () => {
 
     beforeEach(() => {
       clearCachedSecret();
-      process.env.CLAWDBOT_AUTH_DISABLED = 'true';
-      delete process.env.CLAWDBOT_AUTH_SECRET;
+      process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = 'true';
+      delete process.env.OPENCLAW_PROJECTS_AUTH_SECRET;
     });
 
     afterEach(async () => {
-      process.env.CLAWDBOT_AUTH_SECRET = originalEnv.CLAWDBOT_AUTH_SECRET;
-      process.env.CLAWDBOT_AUTH_DISABLED = originalEnv.CLAWDBOT_AUTH_DISABLED;
+      process.env.OPENCLAW_PROJECTS_AUTH_SECRET = originalEnv.OPENCLAW_PROJECTS_AUTH_SECRET;
+      process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = originalEnv.OPENCLAW_PROJECTS_AUTH_DISABLED;
       clearCachedSecret();
       await resetRealtimeHub();
     });
 
-    it('allows access without auth when CLAWDBOT_AUTH_DISABLED=true', async () => {
+    it('allows access without auth when OPENCLAW_PROJECTS_AUTH_DISABLED=true', async () => {
       const app = buildServer();
       await app.ready();
 
@@ -404,13 +404,13 @@ describe('Shared secret authentication', () => {
 
     beforeEach(() => {
       clearCachedSecret();
-      process.env.CLAWDBOT_AUTH_SECRET = 'some-secret';
-      delete process.env.CLAWDBOT_AUTH_DISABLED;
+      process.env.OPENCLAW_PROJECTS_AUTH_SECRET = 'some-secret';
+      delete process.env.OPENCLAW_PROJECTS_AUTH_DISABLED;
     });
 
     afterEach(async () => {
-      process.env.CLAWDBOT_AUTH_SECRET = originalEnv.CLAWDBOT_AUTH_SECRET;
-      process.env.CLAWDBOT_AUTH_DISABLED = originalEnv.CLAWDBOT_AUTH_DISABLED;
+      process.env.OPENCLAW_PROJECTS_AUTH_SECRET = originalEnv.OPENCLAW_PROJECTS_AUTH_SECRET;
+      process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = originalEnv.OPENCLAW_PROJECTS_AUTH_DISABLED;
       clearCachedSecret();
       await resetRealtimeHub();
     });
@@ -462,13 +462,13 @@ describe('Shared secret authentication', () => {
 
     beforeEach(() => {
       clearCachedSecret();
-      process.env.CLAWDBOT_AUTH_SECRET = 'secret-for-timing-test';
-      delete process.env.CLAWDBOT_AUTH_DISABLED;
+      process.env.OPENCLAW_PROJECTS_AUTH_SECRET = 'secret-for-timing-test';
+      delete process.env.OPENCLAW_PROJECTS_AUTH_DISABLED;
     });
 
     afterEach(async () => {
-      process.env.CLAWDBOT_AUTH_SECRET = originalEnv.CLAWDBOT_AUTH_SECRET;
-      process.env.CLAWDBOT_AUTH_DISABLED = originalEnv.CLAWDBOT_AUTH_DISABLED;
+      process.env.OPENCLAW_PROJECTS_AUTH_SECRET = originalEnv.OPENCLAW_PROJECTS_AUTH_SECRET;
+      process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = originalEnv.OPENCLAW_PROJECTS_AUTH_DISABLED;
       clearCachedSecret();
       await resetRealtimeHub();
     });

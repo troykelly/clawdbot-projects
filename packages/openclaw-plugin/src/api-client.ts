@@ -1,5 +1,5 @@
 /**
- * HTTP API client for clawdbot-projects backend.
+ * HTTP API client for openclaw-projects backend.
  * Handles authentication, request/response formatting, error handling,
  * retry logic with exponential backoff, and timeout handling.
  */
@@ -88,7 +88,7 @@ function getErrorCode(status: number): string {
 }
 
 /**
- * HTTP API client for the clawdbot-projects backend.
+ * HTTP API client for the openclaw-projects backend.
  */
 export class ApiClient {
   private readonly baseUrl: string

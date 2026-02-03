@@ -22,7 +22,7 @@ describe('Embedding Settings API Endpoints', () => {
   beforeEach(async () => {
     vi.resetModules();
     process.env = { ...originalEnv };
-    process.env.CLAWDBOT_AUTH_DISABLED = 'true';
+    process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = 'true';
     // Only set OpenAI key, ensure others are cleared
     delete process.env.VOYAGERAI_API_KEY;
     delete process.env.GEMINI_API_KEY;

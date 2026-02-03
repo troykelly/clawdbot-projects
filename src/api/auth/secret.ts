@@ -6,15 +6,15 @@ import { timingSafeEqual } from 'node:crypto';
  * Loads the shared secret from environment variables, file, or command.
  *
  * Priority order (highest first):
- * 1. CLAWDBOT_AUTH_SECRET_COMMAND - Execute command and use output
- * 2. CLAWDBOT_AUTH_SECRET_FILE - Read from file
- * 3. CLAWDBOT_AUTH_SECRET - Direct value from environment
+ * 1. OPENCLAW_PROJECTS_AUTH_SECRET_COMMAND - Execute command and use output
+ * 2. OPENCLAW_PROJECTS_AUTH_SECRET_FILE - Read from file
+ * 3. OPENCLAW_PROJECTS_AUTH_SECRET - Direct value from environment
  *
  * @returns The secret string, or empty string if not configured
  */
 export function loadSecret(): string {
   // Priority 1: Command (e.g., 1Password CLI)
-  const command = process.env.CLAWDBOT_AUTH_SECRET_COMMAND;
+  const command = process.env.OPENCLAW_PROJECTS_AUTH_SECRET_COMMAND;
   if (command && command.trim()) {
     try {
       // Security note: This uses execSync intentionally because:
@@ -35,7 +35,7 @@ export function loadSecret(): string {
   }
 
   // Priority 2: File
-  const file = process.env.CLAWDBOT_AUTH_SECRET_FILE;
+  const file = process.env.OPENCLAW_PROJECTS_AUTH_SECRET_FILE;
   if (file && file.trim()) {
     try {
       // Check file permissions - warn if world-readable
@@ -53,7 +53,7 @@ export function loadSecret(): string {
   }
 
   // Priority 3: Direct environment variable
-  const directValue = process.env.CLAWDBOT_AUTH_SECRET;
+  const directValue = process.env.OPENCLAW_PROJECTS_AUTH_SECRET;
   if (directValue) {
     return directValue.trim();
   }
@@ -106,7 +106,7 @@ export function compareSecrets(provided: string, expected: string): boolean {
  * This should only be used in development.
  */
 export function isAuthDisabled(): boolean {
-  const disabled = process.env.CLAWDBOT_AUTH_DISABLED;
+  const disabled = process.env.OPENCLAW_PROJECTS_AUTH_DISABLED;
   if (disabled === 'true' || disabled === '1') {
     console.warn('[Auth] WARNING: Authentication is disabled. Do not use in production!');
     return true;
@@ -127,8 +127,8 @@ export function requireSecretOrDisabled(): void {
   if (!secret) {
     throw new Error(
       '[Auth] No authentication secret configured. ' +
-        'Set CLAWDBOT_AUTH_SECRET, CLAWDBOT_AUTH_SECRET_FILE, or CLAWDBOT_AUTH_SECRET_COMMAND. ' +
-        'For development, you can set CLAWDBOT_AUTH_DISABLED=true.'
+        'Set OPENCLAW_PROJECTS_AUTH_SECRET, OPENCLAW_PROJECTS_AUTH_SECRET_FILE, or OPENCLAW_PROJECTS_AUTH_SECRET_COMMAND. ' +
+        'For development, you can set OPENCLAW_PROJECTS_AUTH_DISABLED=true.'
     );
   }
 }

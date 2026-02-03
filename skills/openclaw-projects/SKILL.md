@@ -1,16 +1,16 @@
 ---
-name: clawdbot-projects
+name: openclaw-projects
 description: Project management, memory storage, and communications backend for OpenClaw agents
 metadata:
   openclaw:
     emoji: "📋"
     requires:
       env:
-        - CLAWDBOT_URL
-        - CLAWDBOT_AUTH_SECRET
+        - OPENCLAW_PROJECTS_URL
+        - OPENCLAW_PROJECTS_AUTH_SECRET
 ---
 
-# clawdbot-projects
+# openclaw-projects
 
 A backend service for managing projects, tasks, memories, and communications. Designed as the persistent storage and coordination layer for OpenClaw agents.
 
@@ -20,21 +20,21 @@ A backend service for managing projects, tasks, memories, and communications. De
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `CLAWDBOT_URL` | Base URL of the clawdbot-projects instance | `https://projects.example.com` |
-| `CLAWDBOT_AUTH_SECRET` | Shared secret for API authentication | (from 1Password or file) |
+| `OPENCLAW_PROJECTS_URL` | Base URL of the openclaw-projects instance | `https://projects.example.com` |
+| `OPENCLAW_PROJECTS_AUTH_SECRET` | Shared secret for API authentication | (from 1Password or file) |
 
 ### Authentication
 
 All API requests require a Bearer token:
 
 ```bash
-curl -H "Authorization: Bearer $CLAWDBOT_AUTH_SECRET" \
-     "$CLAWDBOT_URL/api/work-items"
+curl -H "Authorization: Bearer $OPENCLAW_PROJECTS_AUTH_SECRET" \
+     "$OPENCLAW_PROJECTS_URL/api/work-items"
 ```
 
 Alternative secret sources:
-- `CLAWDBOT_AUTH_SECRET_COMMAND` - Execute command (e.g., `op read 'op://Vault/secret'`)
-- `CLAWDBOT_AUTH_SECRET_FILE` - Read from file
+- `OPENCLAW_PROJECTS_AUTH_SECRET_COMMAND` - Execute command (e.g., `op read 'op://Vault/secret'`)
+- `OPENCLAW_PROJECTS_AUTH_SECRET_FILE` - Read from file
 
 ---
 
@@ -43,9 +43,9 @@ Alternative secret sources:
 ### Add an item to a list
 
 ```bash
-POST $CLAWDBOT_URL/api/work-items
+POST $OPENCLAW_PROJECTS_URL/api/work-items
 Content-Type: application/json
-Authorization: Bearer $CLAWDBOT_AUTH_SECRET
+Authorization: Bearer $OPENCLAW_PROJECTS_AUTH_SECRET
 
 {
   "title": "Asparagus",
@@ -57,7 +57,7 @@ Authorization: Bearer $CLAWDBOT_AUTH_SECRET
 ### Set a reminder
 
 ```bash
-POST $CLAWDBOT_URL/api/work-items
+POST $OPENCLAW_PROJECTS_URL/api/work-items
 Content-Type: application/json
 
 {
@@ -72,7 +72,7 @@ The `not_before` date triggers a hook to OpenClaw when the time arrives.
 ### Store a memory
 
 ```bash
-POST $CLAWDBOT_URL/api/memory
+POST $OPENCLAW_PROJECTS_URL/api/memory
 Content-Type: application/json
 
 {
@@ -85,14 +85,14 @@ Content-Type: application/json
 ### Search memories
 
 ```bash
-GET $CLAWDBOT_URL/api/memory?search=notification+preferences
+GET $OPENCLAW_PROJECTS_URL/api/memory?search=notification+preferences
 ```
 
 ### Create a project with hierarchy
 
 ```bash
 # Create project
-POST $CLAWDBOT_URL/api/work-items
+POST $OPENCLAW_PROJECTS_URL/api/work-items
 {
   "title": "Tiny Home Build",
   "kind": "project",
@@ -100,7 +100,7 @@ POST $CLAWDBOT_URL/api/work-items
 }
 
 # Create epic under project
-POST $CLAWDBOT_URL/api/work-items
+POST $OPENCLAW_PROJECTS_URL/api/work-items
 {
   "title": "Electrical System",
   "kind": "epic",
@@ -108,7 +108,7 @@ POST $CLAWDBOT_URL/api/work-items
 }
 
 # Create issue under epic
-POST $CLAWDBOT_URL/api/work-items
+POST $OPENCLAW_PROJECTS_URL/api/work-items
 {
   "title": "Install solar panels",
   "kind": "issue",
@@ -806,13 +806,13 @@ GET /api/health          # Detailed status with components
 ### Via ClawHub (when available)
 
 ```bash
-clawhub install clawdbot-projects
+clawhub install openclaw-projects
 ```
 
 ### Manual
 
 ```bash
-git clone https://github.com/troykelly/clawdbot-projects ~/.openclaw/skills/clawdbot-projects
+git clone https://github.com/troykelly/openclaw-projects ~/.openclaw/skills/openclaw-projects
 ```
 
 ### Configuration
@@ -820,8 +820,8 @@ git clone https://github.com/troykelly/clawdbot-projects ~/.openclaw/skills/claw
 Add to your shell profile or `.env`:
 
 ```bash
-export CLAWDBOT_URL="https://your-instance.example.com"
-export CLAWDBOT_AUTH_SECRET_COMMAND="op read 'op://Vault/clawdbot/secret'"
+export OPENCLAW_PROJECTS_URL="https://your-instance.example.com"
+export OPENCLAW_PROJECTS_AUTH_SECRET_COMMAND="op read 'op://Vault/openclaw-projects/secret'"
 ```
 
 ---
@@ -831,4 +831,4 @@ export CLAWDBOT_AUTH_SECRET_COMMAND="op read 'op://Vault/clawdbot/secret'"
 - [OpenClaw Documentation](https://docs.openclaw.ai/)
 - [OpenClaw Skills](https://docs.openclaw.ai/tools/skills)
 - [OpenClaw Hooks](https://docs.openclaw.ai/hooks)
-- [clawdbot-projects Repository](https://github.com/troykelly/clawdbot-projects)
+- [openclaw-projects Repository](https://github.com/troykelly/openclaw-projects)

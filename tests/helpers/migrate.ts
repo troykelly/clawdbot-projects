@@ -15,7 +15,7 @@ function defaultDbHost(): string {
 
 export const DATABASE_URL =
   process.env.DATABASE_URL ||
-  `postgres://clawdbot:clawdbot@${defaultDbHost()}:5432/clawdbot?sslmode=disable`;
+  `postgres://openclaw:openclaw@${defaultDbHost()}:5432/openclaw?sslmode=disable`;
 
 type Migration = {
   version: number;

@@ -1,12 +1,12 @@
 # OpenClaw Skills
 
-This directory contains OpenClaw skill definitions for the clawdbot-projects API.
+This directory contains OpenClaw skill definitions for the openclaw-projects API.
 
 ## Available Skills
 
-### clawdbot-projects
+### openclaw-projects
 
-The main skill for interacting with the clawdbot-projects API. Provides:
+The main skill for interacting with the openclaw-projects API. Provides:
 
 - Work item management (projects, epics, issues, tasks)
 - Memory storage and semantic search
@@ -14,7 +14,7 @@ The main skill for interacting with the clawdbot-projects API. Provides:
 - Activity feeds and notifications
 - Timeline and analytics
 
-See [clawdbot-projects/SKILL.md](./clawdbot-projects/SKILL.md) for full documentation.
+See [openclaw-projects/SKILL.md](./openclaw-projects/SKILL.md) for full documentation.
 
 ## Installation
 
@@ -23,13 +23,13 @@ See [clawdbot-projects/SKILL.md](./clawdbot-projects/SKILL.md) for full document
 Copy the skill to your OpenClaw skills directory:
 
 ```bash
-cp -r skills/clawdbot-projects ~/.openclaw/skills/
+cp -r skills/openclaw-projects ~/.openclaw/skills/
 ```
 
 ### Via ClawHub (when available)
 
 ```bash
-clawhub install clawdbot-projects
+clawhub install openclaw-projects
 ```
 
 ## Configuration
@@ -37,10 +37,10 @@ clawhub install clawdbot-projects
 Set the required environment variables:
 
 ```bash
-export CLAWDBOT_URL="https://your-instance.example.com"
-export CLAWDBOT_AUTH_SECRET="your-secret"
+export OPENCLAW_PROJECTS_URL="https://your-instance.example.com"
+export OPENCLAW_PROJECTS_AUTH_SECRET="your-secret"
 # Or use command-based secret:
-export CLAWDBOT_AUTH_SECRET_COMMAND="op read 'op://Vault/clawdbot/secret'"
+export OPENCLAW_PROJECTS_AUTH_SECRET_COMMAND="op read 'op://Vault/openclaw-projects/secret'"
 ```
 
 ## References

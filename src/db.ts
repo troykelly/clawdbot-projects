@@ -12,9 +12,9 @@ export function createPool(config?: PoolConfig): Pool {
   return new Pool({
     host: process.env.PGHOST || defaultHost(),
     port: parseInt(process.env.PGPORT || '5432', 10),
-    user: process.env.PGUSER || 'clawdbot',
-    password: process.env.PGPASSWORD || 'clawdbot',
-    database: process.env.PGDATABASE || 'clawdbot',
+    user: process.env.PGUSER || 'openclaw',
+    password: process.env.PGPASSWORD || 'openclaw',
+    database: process.env.PGDATABASE || 'openclaw',
     ...config,
   });
 }

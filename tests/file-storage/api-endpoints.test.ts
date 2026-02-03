@@ -63,7 +63,7 @@ describe('File Storage API Endpoints', () => {
   beforeEach(async () => {
     vi.resetModules();
     process.env = { ...originalEnv };
-    process.env.CLAWDBOT_AUTH_DISABLED = 'true';
+    process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = 'true';
     // Set mock S3 env vars
     process.env.S3_BUCKET = 'test-bucket';
     process.env.S3_REGION = 'us-east-1';

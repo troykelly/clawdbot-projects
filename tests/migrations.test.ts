@@ -13,9 +13,9 @@ describe('Migrations', () => {
     pool = new Pool({
       host,
       port: parseInt(process.env.PGPORT || '5432', 10),
-      user: process.env.PGUSER || 'clawdbot',
-      password: process.env.PGPASSWORD || 'clawdbot',
-      database: process.env.PGDATABASE || 'clawdbot',
+      user: process.env.PGUSER || 'openclaw',
+      password: process.env.PGPASSWORD || 'openclaw',
+      database: process.env.PGDATABASE || 'openclaw',
     });
 
     // Reset migrations before tests (best-effort)
@@ -91,9 +91,9 @@ describe('Migrations', () => {
     pool = new Pool({
       host,
       port: parseInt(process.env.PGPORT || '5432', 10),
-      user: process.env.PGUSER || 'clawdbot',
-      password: process.env.PGPASSWORD || 'clawdbot',
-      database: process.env.PGDATABASE || 'clawdbot',
+      user: process.env.PGUSER || 'openclaw',
+      password: process.env.PGPASSWORD || 'openclaw',
+      database: process.env.PGDATABASE || 'openclaw',
     });
 
     const result = await pool.query(`

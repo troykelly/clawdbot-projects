@@ -85,7 +85,7 @@ export function verifyPostmarkAuth(request: FastifyRequest): boolean {
   if (!expectedUsername || !expectedPassword) {
     console.warn('[Webhook] POSTMARK_WEBHOOK_USERNAME/PASSWORD not configured');
     // Check if we're in development mode
-    if (process.env.NODE_ENV === 'development' || process.env.CLAWDBOT_AUTH_DISABLED === 'true') {
+    if (process.env.NODE_ENV === 'development' || process.env.OPENCLAW_PROJECTS_AUTH_DISABLED === 'true') {
       return true;
     }
     return false;
@@ -124,7 +124,7 @@ export function verifyCloudflareEmailSecret(request: FastifyRequest): boolean {
   const expectedSecret = getSecretFromEnvSync('CLOUDFLARE_EMAIL_SECRET');
   if (!expectedSecret) {
     console.warn('[Webhook] CLOUDFLARE_EMAIL_SECRET not configured');
-    if (process.env.NODE_ENV === 'development' || process.env.CLAWDBOT_AUTH_DISABLED === 'true') {
+    if (process.env.NODE_ENV === 'development' || process.env.OPENCLAW_PROJECTS_AUTH_DISABLED === 'true') {
       return true;
     }
     return false;

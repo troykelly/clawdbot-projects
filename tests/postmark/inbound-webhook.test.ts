@@ -51,7 +51,7 @@ describe('Postmark Inbound Webhook', () => {
     process.env = { ...originalEnv };
     process.env.POSTMARK_WEBHOOK_USERNAME = webhookUsername;
     process.env.POSTMARK_WEBHOOK_PASSWORD = webhookPassword;
-    process.env.CLAWDBOT_AUTH_DISABLED = 'true'; // Disable auth for most tests
+    process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = 'true'; // Disable auth for most tests
 
     pool = createTestPool();
     await truncateAllTables(pool);
@@ -360,7 +360,7 @@ describe('Postmark Inbound Webhook', () => {
   describe('Authentication', () => {
     beforeEach(() => {
       // Enable authentication
-      delete process.env.CLAWDBOT_AUTH_DISABLED;
+      delete process.env.OPENCLAW_PROJECTS_AUTH_DISABLED;
     });
 
     it('returns 401 when credentials missing', async () => {
@@ -409,7 +409,7 @@ describe('Postmark Inbound Webhook', () => {
     });
 
     it('accepts request when auth is disabled', async () => {
-      process.env.CLAWDBOT_AUTH_DISABLED = 'true';
+      process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = 'true';
       const payload = createPostmarkPayload();
 
       const response = await app.inject({

@@ -19,7 +19,7 @@ describe('Email & Calendar Sync API', () => {
     process.env.GOOGLE_CLIENT_SECRET = 'test-google-secret';
     process.env.MS365_CLIENT_ID = 'test-ms-id';
     process.env.MS365_CLIENT_SECRET = 'test-ms-secret';
-    process.env.CLAWDBOT_AUTH_DISABLED = 'true';
+    process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = 'true';
 
     await runMigrate('up');
     pool = createTestPool();

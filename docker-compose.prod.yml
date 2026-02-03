@@ -1,32 +1,32 @@
-# Production compose for clawdbot-projects (Issue #46)
+# Production compose for openclaw-projects (Issue #46)
 #
 # Usage:
 #   cp .env.example .env
 #   docker compose -f docker-compose.prod.yml up -d
 #   docker compose -f docker-compose.prod.yml run --rm migrate
 #
-name: clawdbot-projects
+name: openclaw-projects
 
 services:
   postgres:
     build:
       context: .
       dockerfile: docker/postgres/Dockerfile
-    container_name: clawdbot-projects-postgres
+    container_name: openclaw-projects-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-clawdbot}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clawdbot}
-      POSTGRES_DB: ${POSTGRES_DB:-clawdbot}
+      POSTGRES_USER: ${POSTGRES_USER:-openclaw}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-openclaw}
+      POSTGRES_DB: ${POSTGRES_DB:-openclaw}
     # Required for some extensions (notably pg_cron and TimescaleDB)
     command:
       - postgres
       - -c
       - shared_preload_libraries=timescaledb,pg_cron
       - -c
-      - cron.database_name=${POSTGRES_DB:-clawdbot}
+      - cron.database_name=${POSTGRES_DB:-openclaw}
     volumes:
-      - /var/project/data/clawdbot-projects/postgres:/var/lib/postgresql
+      - /var/project/data/openclaw-projects/postgres:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -37,7 +37,7 @@ services:
     build:
       context: .
       dockerfile: docker/api/Dockerfile
-    container_name: clawdbot-projects
+    container_name: openclaw-projects
     restart: unless-stopped
     depends_on:
       postgres:
@@ -51,9 +51,9 @@ services:
       # DB connection (used by the API)
       PGHOST: postgres
       PGPORT: 5432
-      PGUSER: ${POSTGRES_USER:-clawdbot}
-      PGPASSWORD: ${POSTGRES_PASSWORD:-clawdbot}
-      PGDATABASE: ${POSTGRES_DB:-clawdbot}
+      PGUSER: ${POSTGRES_USER:-openclaw}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-openclaw}
+      PGDATABASE: ${POSTGRES_DB:-openclaw}
 
       # Email (Postmark)
       POSTMARK_FROM: ${POSTMARK_FROM:-}
@@ -63,8 +63,8 @@ services:
       POSTMARK_BROADCAST_TOKEN_FILE: ${POSTMARK_BROADCAST_TOKEN_FILE:-/run/secrets/postmark_broadcast_token}
 
     volumes:
-      - /home/moltbot/.postmark_transactional_token:/run/secrets/postmark_transactional_token:ro
-      - /home/moltbot/.postmark_broadcast_token:/run/secrets/postmark_broadcast_token:ro
+      - /home/openclaw/.postmark_transactional_token:/run/secrets/postmark_transactional_token:ro
+      - /home/openclaw/.postmark_broadcast_token:/run/secrets/postmark_broadcast_token:ro
 
     # Expose the service for Traefik/file-provider usage.
     # For a docker-provider Traefik setup, remove the host mapping and use a shared network + labels.
@@ -80,16 +80,16 @@ services:
     build:
       context: .
       dockerfile: docker/migrate/Dockerfile
-    container_name: clawdbot-projects-migrate
+    container_name: openclaw-projects-migrate
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-clawdbot}:${POSTGRES_PASSWORD:-clawdbot}@postgres:5432/${POSTGRES_DB:-clawdbot}?sslmode=disable
+      DATABASE_URL: postgresql://${POSTGRES_USER:-openclaw}:${POSTGRES_PASSWORD:-openclaw}@postgres:5432/${POSTGRES_DB:-openclaw}?sslmode=disable
     command:
       - -path
       - /migrations
       - -database
-      - postgresql://${POSTGRES_USER:-clawdbot}:${POSTGRES_PASSWORD:-clawdbot}@postgres:5432/${POSTGRES_DB:-clawdbot}?sslmode=disable
+      - postgresql://${POSTGRES_USER:-openclaw}:${POSTGRES_PASSWORD:-openclaw}@postgres:5432/${POSTGRES_DB:-openclaw}?sslmode=disable
       - up
     restart: "no"

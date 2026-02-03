@@ -54,10 +54,10 @@ pnpm db:down  # Stop and remove container
 
 ```bash
 # Apply all migrations
-DATABASE_URL="postgres://clawdbot:clawdbot@localhost:5432/clawdbot?sslmode=disable" pnpm migrate:up
+DATABASE_URL="postgres://openclaw:openclaw@localhost:5432/openclaw?sslmode=disable" pnpm migrate:up
 
 # Rollback last migration
-DATABASE_URL="postgres://clawdbot:clawdbot@localhost:5432/clawdbot?sslmode=disable" pnpm migrate:down
+DATABASE_URL="postgres://openclaw:openclaw@localhost:5432/openclaw?sslmode=disable" pnpm migrate:down
 ```
 
 ### Creating New Migrations
@@ -99,8 +99,8 @@ Tests run against a local Postgres 18 container with these defaults:
 |---------|-------|
 | Host | localhost |
 | Port | 5432 |
-| User | clawdbot |
-| Password | clawdbot |
-| Database | clawdbot |
+| User | openclaw |
+| Password | openclaw |
+| Database | openclaw |
 
 Override via environment variables: `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`
