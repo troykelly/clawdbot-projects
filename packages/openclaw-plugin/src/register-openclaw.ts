@@ -43,6 +43,7 @@ import {
   ProjectStatus,
 } from './tools/index.js'
 import { createGatewayMethods, registerGatewayRpcMethods } from './gateway/rpc-methods.js'
+import { createNotificationService } from './services/notification-service.js'
 
 /** Plugin state stored during registration */
 interface PluginState {
@@ -1581,6 +1582,30 @@ export const registerOpenClaw: PluginInitializer = async (api: OpenClawPluginAPI
     userId,
   })
   registerGatewayRpcMethods(api, gatewayMethods)
+
+  // Register background notification service (Issue #325)
+  // Create a simple event emitter for notifications
+  // In production, this would be provided by the OpenClaw runtime
+  const eventEmitter = {
+    emit: (event: string, payload: unknown) => {
+      logger.debug('Notification event emitted', { event, payload })
+    },
+    on: (_event: string, _handler: (payload: unknown) => void) => {},
+    off: (_event: string, _handler: (payload: unknown) => void) => {},
+  }
+
+  const notificationService = createNotificationService({
+    logger,
+    apiClient,
+    userId,
+    events: eventEmitter,
+    config: {
+      enabled: config.autoRecall, // Only enable if auto-recall is enabled
+      pollIntervalMs: 30000,
+    },
+  })
+
+  api.registerService(notificationService)
 
   // Register CLI commands
   api.registerCli(({ program }) => {
