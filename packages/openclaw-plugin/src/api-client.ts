@@ -28,6 +28,8 @@ export interface RequestOptions {
   userId?: string
   /** Custom timeout (overrides config) */
   timeout?: number
+  /** Mark request as coming from an agent (adds X-OpenClaw-Agent header) */
+  isAgent?: boolean
 }
 
 /** API client options */
@@ -199,6 +201,11 @@ export class ApiClient {
 
       if (options?.userId) {
         headers['X-Agent-Id'] = options.userId
+      }
+
+      // Mark request as coming from an agent for privacy filtering
+      if (options?.isAgent) {
+        headers['X-OpenClaw-Agent'] = options.userId || 'plugin-agent'
       }
 
       const response = await fetch(url, {
