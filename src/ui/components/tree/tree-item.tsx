@@ -12,6 +12,7 @@ import {
   Pencil,
   Trash2,
   GripVertical,
+  FolderInput,
 } from 'lucide-react';
 import { cn } from '@/ui/lib/utils';
 import { Button } from '@/ui/components/ui/button';
@@ -75,6 +76,8 @@ export interface TreeItemRowProps {
   onAddChild?: (parentId: string, kind: TreeItemKind) => void;
   onEdit?: (id: string) => void;
   onDelete?: (id: string) => void;
+  /** Called when user requests to move the item via "Move to..." menu */
+  onMoveRequest?: (item: TreeItem) => void;
 }
 
 export function TreeItemRow({
@@ -87,6 +90,7 @@ export function TreeItemRow({
   onAddChild,
   onEdit,
   onDelete,
+  onMoveRequest,
 }: TreeItemRowProps) {
   const {
     attributes,
@@ -232,6 +236,12 @@ export function TreeItemRow({
             <DropdownMenuItem onClick={() => onEdit(item.id)}>
               <Pencil className="mr-2 size-4" />
               Edit
+            </DropdownMenuItem>
+          )}
+          {onMoveRequest && item.kind !== 'project' && (
+            <DropdownMenuItem onClick={() => onMoveRequest(item)}>
+              <FolderInput className="mr-2 size-4" />
+              Move to...
             </DropdownMenuItem>
           )}
           {onDelete && (
