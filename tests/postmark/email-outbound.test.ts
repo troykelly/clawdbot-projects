@@ -43,7 +43,7 @@ describe('Postmark email outbound sending (#293)', () => {
       const result = await enqueueEmailMessage(pool, {
         to: 'test@example.com',
         subject: 'Test Subject',
-        body: 'Hello from clawdbot!',
+        body: 'Hello from openclaw!',
         threadId: thread.rows[0].id,
       });
 
@@ -61,7 +61,7 @@ describe('Postmark email outbound sending (#293)', () => {
       );
       expect(msg.rows[0].direction).toBe('outbound');
       expect(msg.rows[0].status).toBe('pending');
-      expect(msg.rows[0].body).toBe('Hello from clawdbot!');
+      expect(msg.rows[0].body).toBe('Hello from openclaw!');
       expect(msg.rows[0].subject).toBe('Test Subject');
     });
 

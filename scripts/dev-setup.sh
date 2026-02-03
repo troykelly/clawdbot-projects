@@ -14,9 +14,9 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # Database connection
 export PGHOST="${PGHOST:-postgres}"
-export PGUSER="${PGUSER:-clawdbot}"
-export PGPASSWORD="${PGPASSWORD:-clawdbot}"
-export PGDATABASE="${PGDATABASE:-clawdbot}"
+export PGUSER="${PGUSER:-openclaw}"
+export PGPASSWORD="${PGPASSWORD:-openclaw}"
+export PGDATABASE="${PGDATABASE:-openclaw}"
 
 RESET=false
 SEED=false
@@ -102,8 +102,8 @@ ON CONFLICT DO NOTHING;
 -- Add some comments
 INSERT INTO work_item_comment (work_item_id, user_email, content, mentions)
 VALUES
-  ('33333333-3333-3333-3333-333333333333', 'demo@clawdbot.dev', 'This is looking great! We should prioritize this for the next sprint.', '{}'),
-  ('44444444-4444-4444-4444-444444444444', 'demo@clawdbot.dev', 'Working on the cmd+k shortcut improvements now.', '{}')
+  ('33333333-3333-3333-3333-333333333333', 'demo@openclaw.dev', 'This is looking great! We should prioritize this for the next sprint.', '{}'),
+  ('44444444-4444-4444-4444-444444444444', 'demo@openclaw.dev', 'Working on the cmd+k shortcut improvements now.', '{}')
 ON CONFLICT DO NOTHING;
 EOF
   echo "    Sample data seeded"

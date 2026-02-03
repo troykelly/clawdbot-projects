@@ -2,7 +2,7 @@
 
 ## Overview
 
-clawdbot-projects needs to generate embeddings for semantic search across memories, contacts, and work items. This design adds a pluggable embedding service supporting multiple providers.
+openclaw-projects needs to generate embeddings for semantic search across memories, contacts, and work items. This design adds a pluggable embedding service supporting multiple providers.
 
 ## Problem Statement
 

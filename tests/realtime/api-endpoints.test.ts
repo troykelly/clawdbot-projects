@@ -14,7 +14,7 @@ describe('Real-time API Endpoints', () => {
   beforeEach(async () => {
     vi.resetModules();
     process.env = { ...originalEnv };
-    process.env.CLAWDBOT_AUTH_DISABLED = 'true';
+    process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = 'true';
     await resetRealtimeHub();
     app = buildServer({ logger: false });
   });
@@ -52,7 +52,7 @@ describe('Real-time event emission integration', () => {
   beforeEach(async () => {
     vi.resetModules();
     process.env = { ...originalEnv };
-    process.env.CLAWDBOT_AUTH_DISABLED = 'true';
+    process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = 'true';
     await resetRealtimeHub();
   });
 

@@ -1,4 +1,4 @@
-# AGENTS.md — clawdbot-projects
+# AGENTS.md — openclaw-projects
 
 This repo is worked on by humans and automated agents.
 
@@ -8,7 +8,7 @@ If you are an automated agent (including dev-major/dev-adhoc, Claude Code, Codex
 
 ## What This Project Is
 
-**clawdbot-projects** is a **third-party backend service** designed for integration with [OpenClaw](https://docs.openclaw.ai/) — providing project management, memory storage, and communications handling for AI agents.
+**openclaw-projects** is a **third-party backend service** designed for integration with [OpenClaw](https://docs.openclaw.ai/) — providing project management, memory storage, and communications handling for AI agents.
 
 > This is NOT part of OpenClaw itself. We build integrations FOR OpenClaw.
 

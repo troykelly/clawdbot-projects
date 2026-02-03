@@ -7,7 +7,7 @@ services:
       - path: ../.env
         required: false
     volumes:
-      - ..:/workspaces/clawdbot-projects:cached
+      - ..:/workspaces/openclaw-projects:cached
       - /var/run/docker.sock:/var/run/docker.sock
     command: sleep infinity
     depends_on:
@@ -19,19 +19,19 @@ services:
       context: ..
       dockerfile: docker/postgres/Dockerfile
     environment:
-      POSTGRES_USER: clawdbot
-      POSTGRES_PASSWORD: clawdbot
-      POSTGRES_DB: clawdbot
+      POSTGRES_USER: openclaw
+      POSTGRES_PASSWORD: openclaw
+      POSTGRES_DB: openclaw
     command:
       - postgres
       - -c
       - shared_preload_libraries=timescaledb,pg_cron
       - -c
-      - cron.database_name=clawdbot
+      - cron.database_name=openclaw
     volumes:
-      - clawdbot_projects_postgres_data:/var/lib/postgresql
+      - openclaw_projects_postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U clawdbot -d clawdbot"]
+      test: ["CMD-SHELL", "pg_isready -U openclaw -d openclaw"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -39,14 +39,14 @@ services:
   minio:
     image: minio/minio:latest
     environment:
-      MINIO_ROOT_USER: clawdbot
-      MINIO_ROOT_PASSWORD: clawdbot123
+      MINIO_ROOT_USER: openclaw
+      MINIO_ROOT_PASSWORD: openclaw123
     command: server /data --console-address ":9001"
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - clawdbot_projects_minio_data:/data
+      - openclaw_projects_minio_data:/data
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s
@@ -54,5 +54,5 @@ services:
       retries: 5
 
 volumes:
-  clawdbot_projects_postgres_data:
-  clawdbot_projects_minio_data:
+  openclaw_projects_postgres_data:
+  openclaw_projects_minio_data:

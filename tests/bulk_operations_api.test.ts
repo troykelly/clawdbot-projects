@@ -12,9 +12,9 @@ describe('Bulk Operations API', () => {
     pool = new Pool({
       host,
       port: parseInt(process.env.PGPORT || '5432', 10),
-      user: process.env.PGUSER || 'clawdbot',
-      password: process.env.PGPASSWORD || 'clawdbot',
-      database: process.env.PGDATABASE || 'clawdbot',
+      user: process.env.PGUSER || 'openclaw',
+      password: process.env.PGPASSWORD || 'openclaw',
+      database: process.env.PGDATABASE || 'openclaw',
     });
   });
 

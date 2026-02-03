@@ -3,11 +3,11 @@ services:
     build:
       context: .
       dockerfile: docker/postgres/Dockerfile
-    container_name: clawdbot-postgres
+    container_name: openclaw-postgres
     environment:
-      POSTGRES_USER: clawdbot
-      POSTGRES_PASSWORD: clawdbot
-      POSTGRES_DB: clawdbot
+      POSTGRES_USER: openclaw
+      POSTGRES_PASSWORD: openclaw
+      POSTGRES_DB: openclaw
     ports:
       - "5432:5432"
     # Required for some extensions (notably pg_cron and TimescaleDB)
@@ -16,11 +16,11 @@ services:
       - -c
       - shared_preload_libraries=timescaledb,pg_cron
       - -c
-      - cron.database_name=clawdbot
+      - cron.database_name=openclaw
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U clawdbot -d clawdbot"]
+      test: ["CMD-SHELL", "pg_isready -U openclaw -d openclaw"]
       interval: 5s
       timeout: 5s
       retries: 5

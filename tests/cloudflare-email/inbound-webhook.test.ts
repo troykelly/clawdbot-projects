@@ -38,7 +38,7 @@ describe('Cloudflare Email Inbound Webhook', () => {
     vi.resetModules();
     process.env = { ...originalEnv };
     process.env.CLOUDFLARE_EMAIL_SECRET = webhookSecret;
-    process.env.CLAWDBOT_AUTH_DISABLED = 'true'; // Disable auth for most tests
+    process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = 'true'; // Disable auth for most tests
 
     pool = createTestPool();
     await truncateAllTables(pool);
@@ -316,7 +316,7 @@ describe('Cloudflare Email Inbound Webhook', () => {
   describe('Secret Header Authentication', () => {
     beforeEach(() => {
       // Enable authentication
-      delete process.env.CLAWDBOT_AUTH_DISABLED;
+      delete process.env.OPENCLAW_PROJECTS_AUTH_DISABLED;
     });
 
     it('returns 401 when signature is missing', async () => {
@@ -367,7 +367,7 @@ describe('Cloudflare Email Inbound Webhook', () => {
     });
 
     it('accepts request when auth is disabled', async () => {
-      process.env.CLAWDBOT_AUTH_DISABLED = 'true';
+      process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = 'true';
       const payload = createCloudflarePayload();
 
       const response = await app.inject({

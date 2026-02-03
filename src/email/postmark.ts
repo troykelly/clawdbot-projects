@@ -18,7 +18,7 @@ export type PostmarkSendResult = {
   Message: string;
 };
 
-const DEFAULT_TOKEN_FILE = '/home/clawdbot/.postmark_transactional_token';
+const DEFAULT_TOKEN_FILE = '/home/openclaw/.postmark_transactional_token';
 
 export async function getPostmarkTransactionalToken(): Promise<string | null> {
   if (process.env.POSTMARK_TRANSACTIONAL_TOKEN && process.env.POSTMARK_TRANSACTIONAL_TOKEN.trim()) {

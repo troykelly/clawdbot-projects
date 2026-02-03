@@ -1,0 +1,27 @@
+# Reference systemd unit for the VM.
+# Install to: /etc/systemd/system/openclaw-projects.service
+
+[Unit]
+Description=openclaw-projects API (serves /dashboard)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openclaw
+Group=openclaw
+WorkingDirectory=/home/openclaw/openclaw-projects
+
+Environment=HOST=127.0.0.1
+Environment=PORT=3000
+Environment=PUBLIC_BASE_URL=https://projects.example.com
+
+# DB defaults are fine for local VM usage (localhost:5432, openclaw/openclaw).
+# Override via Environment=PGHOST=..., etc if needed.
+
+ExecStart=/home/openclaw/.local/share/pnpm/pnpm api:dev
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -184,7 +184,7 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Sign in - clawdbot-projects</title>
+  <title>Sign in - OpenClaw Projects</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -194,7 +194,7 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
   <div class="flex min-h-screen flex-col items-center justify-center px-4">
     <div class="w-full max-w-md">
       <div class="mb-8 text-center">
-        <h1 class="text-3xl font-bold tracking-tight">clawdbot</h1>
+        <h1 class="text-3xl font-bold tracking-tight">OpenClaw Projects</h1>
         <p class="mt-2 text-sm text-muted-foreground">Human-Agent Collaboration Workspace</p>
       </div>
       <div class="rounded-lg border border-border bg-surface p-6 shadow-sm">
@@ -609,15 +609,15 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
 
   // API Capabilities endpoint - Agent-discoverable capability list (Issue #207)
   app.get('/api/capabilities', async () => ({
-    name: 'clawdbot-projects',
+    name: 'openclaw-projects',
     version: '1.0.0',
     description: 'Project management, memory storage, and communications backend for OpenClaw agents',
-    documentation: '/skills/clawdbot-projects/SKILL.md',
+    documentation: '/skills/openclaw-projects/SKILL.md',
     authentication: {
       type: 'bearer',
       header: 'Authorization',
       format: 'Bearer <token>',
-      envVars: ['CLAWDBOT_AUTH_SECRET', 'CLAWDBOT_AUTH_SECRET_FILE', 'CLAWDBOT_AUTH_SECRET_COMMAND'],
+      envVars: ['OPENCLAW_PROJECTS_AUTH_SECRET', 'OPENCLAW_PROJECTS_AUTH_SECRET_FILE', 'OPENCLAW_PROJECTS_AUTH_SECRET_COMMAND'],
     },
     capabilities: [
       {
@@ -761,7 +761,7 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
   app.get('/api/openapi.json', async () => ({
     openapi: '3.0.3',
     info: {
-      title: 'clawdbot-projects API',
+      title: 'openclaw-projects API',
       version: '1.0.0',
       description: 'Project management, memory storage, and communications backend for OpenClaw agents',
       contact: {

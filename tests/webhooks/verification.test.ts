@@ -42,7 +42,7 @@ describe('Webhook Verification', () => {
     vi.resetModules();
     process.env = { ...originalEnv };
     // Reset auth disabled
-    delete process.env.CLAWDBOT_AUTH_DISABLED;
+    delete process.env.OPENCLAW_PROJECTS_AUTH_DISABLED;
     delete process.env.NODE_ENV;
   });
 
@@ -201,7 +201,7 @@ describe('Webhook Verification', () => {
     });
 
     it('returns true when auth disabled', () => {
-      process.env.CLAWDBOT_AUTH_DISABLED = 'true';
+      process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = 'true';
       delete process.env.POSTMARK_WEBHOOK_USERNAME;
       delete process.env.POSTMARK_WEBHOOK_PASSWORD;
 

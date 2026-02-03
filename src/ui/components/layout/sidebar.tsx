@@ -55,10 +55,10 @@ export function Sidebar({
         <div className="flex h-14 items-center px-4">
           <div className={cn('flex items-center gap-3', collapsed && 'justify-center w-full')}>
             <div className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/70 shadow-sm">
-              <span className="text-sm font-bold text-primary-foreground">C</span>
+              <span className="text-sm font-bold text-primary-foreground">O</span>
             </div>
             {!collapsed && (
-              <span className="text-base font-semibold tracking-tight text-foreground">clawdbot</span>
+              <span className="text-base font-semibold tracking-tight text-foreground">OpenClaw Projects</span>
             )}
           </div>
           {!collapsed && (

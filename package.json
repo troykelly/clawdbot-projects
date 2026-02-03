@@ -1,5 +1,5 @@
 {
-  "name": "clawdbot-projects",
+  "name": "@troykelly/openclaw-projects",
   "version": "1.0.0",
   "description": "Postgres-backed project + task management system",
   "type": "module",

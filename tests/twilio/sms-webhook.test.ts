@@ -60,7 +60,7 @@ describe('Twilio SMS Webhook', () => {
     vi.resetModules();
     process.env = { ...originalEnv };
     process.env.TWILIO_AUTH_TOKEN = authToken;
-    process.env.CLAWDBOT_AUTH_DISABLED = 'true'; // Disable auth for testing
+    process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = 'true'; // Disable auth for testing
 
     pool = createTestPool();
     await truncateAllTables(pool);
@@ -290,7 +290,7 @@ describe('Twilio SMS Webhook', () => {
   describe('Signature Verification', () => {
     beforeEach(() => {
       // Enable signature verification
-      delete process.env.CLAWDBOT_AUTH_DISABLED;
+      delete process.env.OPENCLAW_PROJECTS_AUTH_DISABLED;
     });
 
     it('returns 401 for invalid signature', async () => {
@@ -327,7 +327,7 @@ describe('Twilio SMS Webhook', () => {
 
     it('accepts request when auth is disabled (development mode)', async () => {
       // Re-enable auth disabled for this test
-      process.env.CLAWDBOT_AUTH_DISABLED = 'true';
+      process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = 'true';
 
       const payload = createTwilioPayload();
 

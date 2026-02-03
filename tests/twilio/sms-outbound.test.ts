@@ -41,7 +41,7 @@ describe('Twilio SMS outbound sending (#291)', () => {
 
       const result = await enqueueSmsMessage(pool, {
         to: '+15551234567',
-        body: 'Hello from clawdbot!',
+        body: 'Hello from openclaw!',
         threadId: thread.rows[0].id,
       });
 
@@ -58,7 +58,7 @@ describe('Twilio SMS outbound sending (#291)', () => {
       );
       expect(msg.rows[0].direction).toBe('outbound');
       expect(msg.rows[0].status).toBe('pending');
-      expect(msg.rows[0].body).toBe('Hello from clawdbot!');
+      expect(msg.rows[0].body).toBe('Hello from openclaw!');
     });
 
     it('creates new thread if threadId not provided', async () => {

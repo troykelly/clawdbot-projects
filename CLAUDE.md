@@ -1,6 +1,6 @@
-# CLAUDE.md — clawdbot-projects
+# CLAUDE.md — openclaw-projects
 
-You are Claude Code working in `troykelly/clawdbot-projects`.
+You are Claude Code working in `troykelly/openclaw-projects`.
 
 This repo is intended to be maintained by both humans and automated agents. The process rules below are **non-negotiable**.
 
@@ -8,7 +8,7 @@ This repo is intended to be maintained by both humans and automated agents. The 
 
 ## What This Project Is
 
-**clawdbot-projects** is a **third-party project management, memory, and communications backend** designed for integration with [OpenClaw](https://docs.openclaw.ai/) — the open-source AI agent gateway.
+**openclaw-projects** is a **third-party project management, memory, and communications backend** designed for integration with [OpenClaw](https://docs.openclaw.ai/) — the open-source AI agent gateway.
 
 > This is **not** part of OpenClaw itself. We build tools and integrations FOR OpenClaw agents.
 
@@ -72,7 +72,7 @@ Humans interact with OpenClaw agents through messaging platforms (WhatsApp, Tele
 
 This tool integrates with OpenClaw via the [hooks system](https://docs.openclaw.ai/hooks):
 
-### Outbound Hooks (clawdbot-projects → OpenClaw)
+### Outbound Hooks (openclaw-projects → OpenClaw)
 
 Triggered by pgcron jobs when:
 - A reminder fires (`not_before` date reached)
@@ -80,7 +80,7 @@ Triggered by pgcron jobs when:
 - A scheduled nudge is due
 - An inbound message needs agent attention
 
-### Inbound API (OpenClaw → clawdbot-projects)
+### Inbound API (OpenClaw → openclaw-projects)
 
 Agents call our API to:
 - Create/update/query work items

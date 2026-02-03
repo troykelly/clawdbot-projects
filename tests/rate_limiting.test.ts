@@ -14,7 +14,7 @@ describe('Rate Limiting', () => {
   beforeEach(() => {
     vi.resetModules();
     process.env = { ...originalEnv };
-    process.env.CLAWDBOT_AUTH_DISABLED = 'true';
+    process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = 'true';
     // Enable rate limiting for tests
     process.env.NODE_ENV = 'production';
     process.env.RATE_LIMIT_DISABLED = 'false';
@@ -123,7 +123,7 @@ describe('Route-Specific Rate Limits', () => {
   beforeEach(() => {
     vi.resetModules();
     process.env = { ...originalEnv };
-    process.env.CLAWDBOT_AUTH_DISABLED = 'true';
+    process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = 'true';
     process.env.NODE_ENV = 'test'; // Disable rate limiting for these tests
     app = buildServer({ logger: false });
   });

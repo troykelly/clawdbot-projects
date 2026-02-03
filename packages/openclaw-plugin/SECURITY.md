@@ -89,7 +89,7 @@ The auto-capture hook filters content matching these patterns:
                                          │ Bearer Auth
                                          ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                  clawdbot-projects Backend                  │
+│                  openclaw-projects Backend                  │
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │                   API Layer                          │  │
 │  │  - Authentication (API Key)                          │  │

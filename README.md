@@ -1,12 +1,12 @@
-# clawdbot-projects
+# openclaw-projects
 
 A Postgres-backed project management, memory, and communications backend designed for integration with [OpenClaw](https://docs.openclaw.ai/) AI agents.
 
-> **Note:** OpenClaw (the AI agent gateway we integrate with) was previously known as "Clawdbot" and "Moltbot". This project name (`clawdbot-projects`) reflects the original name but now integrates with the current OpenClaw ecosystem.
+> **Note:** OpenClaw (the AI agent gateway we integrate with) was previously known as "Clawdbot" and "Moltbot". This project was originally named `clawdbot-projects` but has been renamed to `openclaw-projects` to align with the current OpenClaw branding.
 
 ## What This Is
 
-**clawdbot-projects** is a **third-party backend service** that provides OpenClaw agents with:
+**openclaw-projects** is a **third-party backend service** that provides OpenClaw agents with:
 
 - **Project Management**: Projects, epics, initiatives, issues, and tasks with full hierarchy
 - **Memory System**: Long-term memory storage with pgvector semantic search
@@ -63,4 +63,4 @@ See `ops/README.md` for the production Docker Compose deployment runbook (includ
 
 - [OpenClaw Documentation](https://docs.openclaw.ai/)
 - [Plugin Documentation](packages/openclaw-plugin/README.md)
-- [Report Issues](https://github.com/troykelly/clawdbot-projects/issues)
+- [Report Issues](https://github.com/troykelly/openclaw-projects/issues)

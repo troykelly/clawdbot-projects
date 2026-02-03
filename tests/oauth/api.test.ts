@@ -17,7 +17,7 @@ describe('OAuth API Endpoints', () => {
   beforeEach(async () => {
     vi.resetModules();
     process.env = { ...originalEnv };
-    process.env.CLAWDBOT_AUTH_DISABLED = 'true';
+    process.env.OPENCLAW_PROJECTS_AUTH_DISABLED = 'true';
 
     pool = createTestPool();
     await runMigrate('up');
