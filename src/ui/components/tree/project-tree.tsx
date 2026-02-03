@@ -20,6 +20,7 @@ import {
 import { cn } from '@/ui/lib/utils';
 import { ScrollArea } from '@/ui/components/ui/scroll-area';
 import { TreeItemRow } from './tree-item';
+import { canMoveToParent } from '@/ui/components/work-item-move';
 import type { TreeItem, TreeItemKind, TreeDragData } from './types';
 
 function flattenTree(
@@ -115,6 +116,10 @@ export interface ProjectTreeProps {
   onAddChild?: (parentId: string, kind: TreeItemKind) => void;
   onEdit?: (id: string) => void;
   onDelete?: (id: string) => void;
+  /** Called when an item is moved to a new parent via drag-drop */
+  onMove?: (itemId: string, newParentId: string | null) => void;
+  /** Called when user requests to move an item via the "Move to..." menu */
+  onMoveRequest?: (item: TreeItem) => void;
   className?: string;
 }
 
@@ -125,6 +130,8 @@ export function ProjectTree({
   onAddChild,
   onEdit,
   onDelete,
+  onMove,
+  onMoveRequest,
   className,
 }: ProjectTreeProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -187,10 +194,12 @@ export function ProjectTree({
       const activeId = active.id as string;
       const overId = over.id as string;
 
+      const activeItem = findItemById(items, activeId);
+      const overItem = findItemById(items, overId);
       const activeInfo = findParentAndIndex(items, activeId);
       const overInfo = findParentAndIndex(items, overId);
 
-      if (!activeInfo || !overInfo) return;
+      if (!activeInfo || !overInfo || !activeItem || !overItem) return;
 
       // Same parent - reorder within siblings
       if (activeInfo.parent?.id === overInfo.parent?.id) {
@@ -204,25 +213,34 @@ export function ProjectTree({
           if (!activeInfo.parent) {
             onItemsChange?.(newSiblings);
           } else {
-            const updateParent = (items: TreeItem[]): TreeItem[] =>
-              items.map((item) => {
-                if (item.id === activeInfo.parent!.id) {
-                  return { ...item, children: newSiblings };
+            const updateParent = (treeItems: TreeItem[]): TreeItem[] =>
+              treeItems.map((treeItem) => {
+                if (treeItem.id === activeInfo.parent!.id) {
+                  return { ...treeItem, children: newSiblings };
                 }
-                if (item.children) {
-                  return { ...item, children: updateParent(item.children) };
+                if (treeItem.children) {
+                  return { ...treeItem, children: updateParent(treeItem.children) };
                 }
-                return item;
+                return treeItem;
               });
             onItemsChange?.(updateParent(items));
           }
         }
+      } else {
+        // Different parent - reparent if valid hierarchy
+        // Check if the dragged item can be moved under the target item
+        const canMove = canMoveToParent(
+          { id: activeItem.id, kind: activeItem.kind },
+          { id: overItem.id, kind: overItem.kind }
+        );
+
+        if (canMove && onMove) {
+          // Call the onMove handler to persist the change via API
+          onMove(activeId, overId);
+        }
       }
-      // Different parent - reparent (if valid hierarchy)
-      // This would require checking if the move is valid (e.g., can't move epic under issue)
-      // For now, we only support reorder within same parent
     },
-    [items, onItemsChange]
+    [items, onItemsChange, onMove]
   );
 
   const handleDragCancel = useCallback(() => {
@@ -253,6 +271,7 @@ export function ProjectTree({
                   onAddChild={onAddChild}
                   onEdit={onEdit}
                   onDelete={onDelete}
+                  onMoveRequest={onMoveRequest}
                 />
               ))}
             </SortableContext>

@@ -35,6 +35,14 @@ import {
   type DeleteItem,
 } from '@/ui/components/work-item-delete';
 
+// Work item move/reparent
+import {
+  MoveToDialog,
+  useWorkItemMove,
+  type MoveItem,
+  type PotentialParent,
+} from '@/ui/components/work-item-move';
+
 // Communications components
 import { ItemCommunications } from '@/ui/components/communications/item-communications';
 import type { LinkedEmail, LinkedCalendarEvent } from '@/ui/components/communications/types';
@@ -371,6 +379,70 @@ function WorkItemsListPage(): React.JSX.Element {
     setItemToDelete(null);
   }, [itemToDelete, performDelete]);
 
+  // Move state
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
+  const [itemToMove, setItemToMove] = useState<MoveItem | null>(null);
+
+  // Convert tree items to flat list of potential parents for move dialog
+  const getPotentialParents = useCallback((items: TreeItem[]): PotentialParent[] => {
+    const result: PotentialParent[] = [];
+    const traverse = (treeItems: TreeItem[]) => {
+      for (const treeItem of treeItems) {
+        result.push({
+          id: treeItem.id,
+          title: treeItem.title,
+          kind: treeItem.kind,
+        });
+        if (treeItem.children) {
+          traverse(treeItem.children);
+        }
+      }
+    };
+    traverse(items);
+    return result;
+  }, []);
+
+  const potentialParents = useMemo(
+    () => getPotentialParents(treeItems),
+    [treeItems, getPotentialParents]
+  );
+
+  // Move hook
+  const { moveItem: performMove, isMoving } = useWorkItemMove({
+    onMoved: () => {
+      // Refresh tree and list after move
+      fetchTree();
+      setState({ kind: 'loading' });
+    },
+  });
+
+  // Handle move request from context menu
+  const handleMoveRequest = useCallback((item: TreeItem) => {
+    setItemToMove({
+      id: item.id,
+      title: item.title,
+      kind: item.kind,
+      currentParentId: item.parentId,
+    });
+    setMoveDialogOpen(true);
+  }, []);
+
+  // Handle drag-drop move
+  const handleTreeMove = useCallback(async (itemId: string, newParentId: string | null) => {
+    const item = findTreeItem(treeItems, itemId);
+    if (item) {
+      await performMove({ id: item.id, title: item.title }, newParentId);
+    }
+  }, [treeItems, findTreeItem, performMove]);
+
+  // Confirm move from dialog
+  const handleConfirmMove = useCallback(async (newParentId: string | null) => {
+    if (!itemToMove) return;
+    await performMove({ id: itemToMove.id, title: itemToMove.title }, newParentId);
+    setMoveDialogOpen(false);
+    setItemToMove(null);
+  }, [itemToMove, performMove]);
+
   useEffect(() => {
     if (state.kind === 'loaded') return;
 
@@ -472,6 +544,8 @@ function WorkItemsListPage(): React.JSX.Element {
                 items={treeItems}
                 onSelect={handleTreeSelect}
                 onDelete={handleTreeDelete}
+                onMove={handleTreeMove}
+                onMoveRequest={handleMoveRequest}
               />
             )}
           </div>
@@ -571,6 +645,16 @@ function WorkItemsListPage(): React.JSX.Element {
         item={itemToDelete ?? undefined}
         onConfirm={handleConfirmDelete}
         isDeleting={isDeleting}
+      />
+
+      {/* Move to dialog */}
+      <MoveToDialog
+        open={moveDialogOpen}
+        onOpenChange={setMoveDialogOpen}
+        item={itemToMove ?? undefined}
+        potentialParents={potentialParents}
+        onMove={handleConfirmMove}
+        isMoving={isMoving}
       />
 
       {/* Undo toast */}
