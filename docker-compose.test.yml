@@ -1,0 +1,56 @@
+# Docker Compose configuration for E2E testing
+# Part of Epic #310, Issue #326
+#
+# Usage:
+#   docker-compose -f docker-compose.test.yml up -d
+#   npm run test:e2e
+#   docker-compose -f docker-compose.test.yml down -v
+
+services:
+  postgres-test:
+    build:
+      context: .
+      dockerfile: docker/postgres/Dockerfile
+    container_name: openclaw-postgres-test
+    environment:
+      POSTGRES_USER: openclaw
+      POSTGRES_PASSWORD: openclaw_test
+      POSTGRES_DB: openclaw_test
+    ports:
+      - "5433:5432"
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=timescaledb,pg_cron
+      - -c
+      - cron.database_name=openclaw_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openclaw -d openclaw_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: openclaw-backend-test
+    environment:
+      DATABASE_URL: postgres://openclaw:openclaw_test@postgres-test:5432/openclaw_test
+      OPENCLAW_PROJECTS_AUTH_DISABLED: "true"
+      NODE_ENV: test
+      PORT: 3001
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3001/api/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+networks:
+  default:
+    name: openclaw-test-network
