@@ -140,6 +140,9 @@ export const RawPluginConfigSchema = z
 
     /** Enable debug logging (never logs secrets) */
     debug: z.boolean().default(false).describe('Enable debug logging'),
+
+    /** Base URL for web app (used for generating note/notebook URLs) */
+    baseUrl: z.string().url().optional().describe('Web app base URL'),
   })
   .refine(
     (data) => data.apiKey || data.apiKeyFile || data.apiKeyCommand,
@@ -203,6 +206,9 @@ export const PluginConfigSchema = z.object({
 
   /** Enable debug logging */
   debug: z.boolean().default(false),
+
+  /** Base URL for web app */
+  baseUrl: z.string().url().optional(),
 })
 
 export type PluginConfig = z.infer<typeof PluginConfigSchema>
@@ -341,6 +347,7 @@ export async function resolveConfigSecrets(rawConfig: RawPluginConfig): Promise<
     timeout: rawConfig.timeout,
     maxRetries: rawConfig.maxRetries,
     debug: rawConfig.debug,
+    baseUrl: rawConfig.baseUrl,
   }
 
   // Validate the resolved config

@@ -142,6 +142,59 @@ export {
   type ThreadToolOptions,
 } from './threads.js'
 
+// Note tools
+export {
+  createNoteCreateTool,
+  createNoteGetTool,
+  createNoteUpdateTool,
+  createNoteDeleteTool,
+  createNoteSearchTool,
+  NoteCreateParamsSchema,
+  NoteGetParamsSchema,
+  NoteUpdateParamsSchema,
+  NoteDeleteParamsSchema,
+  NoteSearchParamsSchema,
+  NoteVisibility,
+  type NoteCreateParams,
+  type NoteGetParams,
+  type NoteUpdateParams,
+  type NoteDeleteParams,
+  type NoteSearchParams,
+  type NoteCreateTool,
+  type NoteGetTool,
+  type NoteUpdateTool,
+  type NoteDeleteTool,
+  type NoteSearchTool,
+  type NoteCreateResult,
+  type NoteGetResult,
+  type NoteUpdateResult,
+  type NoteDeleteResult,
+  type NoteSearchToolResult,
+  type Note,
+  type NoteToolOptions,
+} from './notes.js'
+
+// Notebook tools
+export {
+  createNotebookListTool,
+  createNotebookCreateTool,
+  createNotebookGetTool,
+  NotebookListParamsSchema,
+  NotebookCreateParamsSchema,
+  NotebookGetParamsSchema,
+  type NotebookListParams,
+  type NotebookCreateParams,
+  type NotebookGetParams,
+  type NotebookListTool,
+  type NotebookCreateTool,
+  type NotebookGetTool,
+  type NotebookListResult,
+  type NotebookCreateResult,
+  type NotebookGetResult,
+  type Notebook,
+  type NotebookToolOptions,
+} from './notebooks.js'
+
 /** Tool factory types */
 export interface ToolFactoryOptions {
   // Common options for tool factories
