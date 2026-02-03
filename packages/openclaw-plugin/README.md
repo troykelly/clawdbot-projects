@@ -1,6 +1,8 @@
 # @troykelly/openclaw-projects
 
-OpenClaw plugin for project management, memory, todos, and contacts integration with the clawdbot-projects backend.
+An [OpenClaw](https://docs.openclaw.ai/) plugin that connects agents to the clawdbot-projects backend for project management, memory, todos, and contacts.
+
+> **Note:** This is a third-party plugin — not part of OpenClaw itself. It provides OpenClaw agents with tools to interact with the [clawdbot-projects](https://github.com/troykelly/clawdbot-projects) backend service.
 
 ## Features
 

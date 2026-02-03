@@ -8,7 +8,9 @@ This repo is intended to be maintained by both humans and automated agents. The 
 
 ## What This Project Is
 
-**clawdbot-projects** is the **project management, memory, and communications backend** for [OpenClaw](https://docs.openclaw.ai/) — the open-source AI agent gateway.
+**clawdbot-projects** is a **third-party project management, memory, and communications backend** designed for integration with [OpenClaw](https://docs.openclaw.ai/) — the open-source AI agent gateway.
+
+> This is **not** part of OpenClaw itself. We build tools and integrations FOR OpenClaw agents.
 
 ### Primary Users: OpenClaw Agents
 
