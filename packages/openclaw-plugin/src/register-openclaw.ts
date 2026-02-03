@@ -42,6 +42,7 @@ import {
   MemoryCategory,
   ProjectStatus,
 } from './tools/index.js'
+import { createGatewayMethods, registerGatewayRpcMethods } from './gateway/rpc-methods.js'
 
 /** Plugin state stored during registration */
 interface PluginState {
@@ -1572,6 +1573,14 @@ export const registerOpenClaw: PluginInitializer = async (api: OpenClawPluginAPI
       return event
     })
   }
+
+  // Register Gateway RPC methods (Issue #324)
+  const gatewayMethods = createGatewayMethods({
+    logger,
+    apiClient,
+    userId,
+  })
+  registerGatewayRpcMethods(api, gatewayMethods)
 
   // Register CLI commands
   api.registerCli(({ program }) => {

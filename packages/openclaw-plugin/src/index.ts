@@ -479,3 +479,21 @@ export {
   createStatsCommand,
   createExportCommand,
 } from './cli.js'
+
+// Re-export Gateway RPC methods
+export type {
+  NotificationEvent,
+  SubscribeParams,
+  SubscribeResult,
+  UnsubscribeParams,
+  UnsubscribeResult,
+  GetNotificationsParams,
+  GetNotificationsResult,
+  Notification,
+  GatewayMethods,
+  GatewayMethodsOptions,
+} from './gateway/rpc-methods.js'
+export {
+  createGatewayMethods,
+  registerGatewayRpcMethods,
+} from './gateway/rpc-methods.js'
