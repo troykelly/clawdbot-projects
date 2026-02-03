@@ -1,0 +1,70 @@
+# E2E Tests Workflow
+# Part of Epic #310, Issue #326
+#
+# Runs end-to-end tests against a real backend instance.
+# This workflow runs on demand and on merges to main.
+
+name: E2E Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/openclaw-plugin/**'
+      - 'src/api/**'
+      - 'docker-compose.test.yml'
+      - '.github/workflows/e2e.yml'
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build + start devcontainer services
+        run: |
+          docker compose -f .devcontainer/docker-compose.devcontainer.yml up -d --build
+
+      - name: Fix workspace permissions (CI)
+        run: |
+          docker compose -f .devcontainer/docker-compose.devcontainer.yml exec -T -u root workspace bash -lc "chown -R vscode:vscode /workspaces/openclaw-projects"
+
+      - name: Install dependencies
+        run: |
+          docker compose -f .devcontainer/docker-compose.devcontainer.yml exec -T workspace bash -lc "cd /workspaces/openclaw-projects && pnpm install --frozen-lockfile"
+
+      - name: Start E2E test services
+        run: |
+          docker compose -f .devcontainer/docker-compose.devcontainer.yml exec -T workspace bash -lc "cd /workspaces/openclaw-projects && docker compose -f docker-compose.test.yml up -d"
+
+      - name: Wait for services
+        run: |
+          docker compose -f .devcontainer/docker-compose.devcontainer.yml exec -T workspace bash -lc "cd /workspaces/openclaw-projects && ./scripts/wait-for-services.sh"
+
+      - name: Run E2E tests
+        env:
+          VOYAGERAI_API_KEY: ${{ secrets.VOYAGERAI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          docker compose -f .devcontainer/docker-compose.devcontainer.yml exec -T \
+            -e VOYAGERAI_API_KEY \
+            -e OPENAI_API_KEY \
+            -e GEMINI_API_KEY \
+            -e RUN_E2E=true \
+            workspace bash -lc "cd /workspaces/openclaw-projects && pnpm test:e2e"
+
+      - name: Stop E2E test services
+        if: always()
+        run: |
+          docker compose -f .devcontainer/docker-compose.devcontainer.yml exec -T workspace bash -lc "cd /workspaces/openclaw-projects && docker compose -f docker-compose.test.yml down -v || true"
+
+      - name: Shutdown
+        if: always()
+        run: |
+          docker compose -f .devcontainer/docker-compose.devcontainer.yml down -v
