@@ -80,5 +80,5 @@ Replace:
 - Very high `--max-iterations` (200+) for large iterations
 - May run for extended periods (hours)
 - Monitor periodically: `grep '^iteration:' .claude/ralph-loop.local.md`
-- Can `/cancel-ralph` and resume later with remaining issues
+- Can `/ralph-loop:cancel-ralph` and resume later with remaining issues
 - Consider breaking into smaller epics if iteration is too large
