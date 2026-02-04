@@ -38,6 +38,27 @@ describe('Relationship Type Service (Epic #486, Issue #490)', () => {
   // Tests that create custom types clean up after themselves.
 
   describe('Pre-seeded types', () => {
+    beforeEach(async () => {
+      // Clean up non-pre-seeded relationship types left by other test files (#554).
+      // Must delete relationships first due to FK constraint on relationship_type_id.
+      const PRE_SEEDED_NAMES = `
+        'partner_of','sibling_of','friend_of','colleague_of','housemate_of','co_parent_of',
+        'parent_of','child_of','grandparent_of','grandchild_of','cares_for','cared_for_by',
+        'employs','employed_by','manages','managed_by','mentor_of','mentee_of',
+        'elder_of','junior_of','member_of','has_member','founder_of','founded_by',
+        'client_of','has_client','vendor_of','has_vendor','assigned_to','manages_agent',
+        'owned_by','owns'
+      `;
+      await pool.query(
+        `DELETE FROM relationship
+         WHERE relationship_type_id IN (
+           SELECT id FROM relationship_type WHERE name NOT IN (${PRE_SEEDED_NAMES})
+         )`
+      );
+      await pool.query(
+        `DELETE FROM relationship_type WHERE name NOT IN (${PRE_SEEDED_NAMES})`
+      );
+    });
     it('has symmetric relationship types', async () => {
       const symmetricNames = [
         'partner_of',
