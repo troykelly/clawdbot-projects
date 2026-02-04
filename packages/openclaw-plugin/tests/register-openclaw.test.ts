@@ -1,6 +1,14 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { registerOpenClaw, schemas } from '../src/register-openclaw.js'
-import type { OpenClawPluginAPI, ToolDefinition, HookHandler } from '../src/types/openclaw-api.js'
+import type {
+  OpenClawPluginAPI,
+  ToolDefinition,
+  HookHandler,
+  PluginHookBeforeAgentStartEvent,
+  PluginHookAgentContext,
+  PluginHookBeforeAgentStartResult,
+  PluginHookAgentEndEvent,
+} from '../src/types/openclaw-api.js'
 
 // Mock fs and child_process for secret resolution
 vi.mock('node:fs')
@@ -10,11 +18,13 @@ describe('OpenClaw 2026 API Registration', () => {
   let mockApi: OpenClawPluginAPI
   let registeredTools: ToolDefinition[]
   let registeredHooks: Map<string, HookHandler>
+  let registeredOnHooks: Map<string, Function>
   let cliCallback: ((ctx: { program: unknown }) => void) | null
 
   beforeEach(() => {
     registeredTools = []
     registeredHooks = new Map()
+    registeredOnHooks = new Map()
     cliCallback = null
 
     mockApi = {
@@ -26,6 +36,7 @@ describe('OpenClaw 2026 API Registration', () => {
         userScoping: 'agent',
       },
       logger: {
+        namespace: 'test',
         info: vi.fn(),
         debug: vi.fn(),
         warn: vi.fn(),
@@ -37,6 +48,9 @@ describe('OpenClaw 2026 API Registration', () => {
       }),
       registerHook: vi.fn((event: string, handler: HookHandler) => {
         registeredHooks.set(event, handler)
+      }),
+      on: vi.fn((hookName: string, handler: Function) => {
+        registeredOnHooks.set(hookName, handler)
       }),
       registerCli: vi.fn((callback: (ctx: { program: unknown }) => void) => {
         cliCallback = callback
@@ -77,16 +91,26 @@ describe('OpenClaw 2026 API Registration', () => {
       expect(toolNames).toContain('relationship_query')
     })
 
-    it('should register beforeAgentStart hook when autoRecall is true', async () => {
+    it('should register before_agent_start hook via api.on() when autoRecall is true', async () => {
       await registerOpenClaw(mockApi)
 
-      expect(registeredHooks.has('beforeAgentStart')).toBe(true)
+      expect(registeredOnHooks.has('before_agent_start')).toBe(true)
+      expect(typeof registeredOnHooks.get('before_agent_start')).toBe('function')
     })
 
-    it('should register agentEnd hook when autoCapture is true', async () => {
+    it('should register agent_end hook via api.on() when autoCapture is true', async () => {
       await registerOpenClaw(mockApi)
 
-      expect(registeredHooks.has('agentEnd')).toBe(true)
+      expect(registeredOnHooks.has('agent_end')).toBe(true)
+      expect(typeof registeredOnHooks.get('agent_end')).toBe('function')
+    })
+
+    it('should NOT use legacy registerHook for hooks', async () => {
+      await registerOpenClaw(mockApi)
+
+      // Should NOT register hooks via the legacy registerHook method
+      expect(registeredHooks.has('beforeAgentStart')).toBe(false)
+      expect(registeredHooks.has('agentEnd')).toBe(false)
     })
 
     it('should not register hooks when disabled', async () => {
@@ -98,8 +122,8 @@ describe('OpenClaw 2026 API Registration', () => {
 
       await registerOpenClaw(mockApi)
 
-      expect(registeredHooks.has('beforeAgentStart')).toBe(false)
-      expect(registeredHooks.has('agentEnd')).toBe(false)
+      expect(registeredOnHooks.has('before_agent_start')).toBe(false)
+      expect(registeredOnHooks.has('agent_end')).toBe(false)
     })
 
     it('should register CLI commands', async () => {
@@ -117,6 +141,285 @@ describe('OpenClaw 2026 API Registration', () => {
           toolCount: 19,
         })
       )
+    })
+
+    it('should fall back to registerHook if api.on is not available', async () => {
+      // Simulate older OpenClaw runtime without api.on
+      const legacyApi = { ...mockApi }
+      delete (legacyApi as Record<string, unknown>).on
+
+      await registerOpenClaw(legacyApi)
+
+      // Should have fallen back to registerHook
+      expect(registeredHooks.has('beforeAgentStart')).toBe(true)
+      expect(registeredHooks.has('agentEnd')).toBe(true)
+    })
+  })
+
+  describe('before_agent_start hook behavior', () => {
+    it('should use the user prompt from event for semantic search', async () => {
+      const fetchCalls: string[] = []
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = vi.fn().mockImplementation(async (url: string) => {
+        fetchCalls.push(url)
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            memories: [
+              { id: '1', content: 'User prefers sushi', category: 'preference', score: 0.9 },
+            ],
+          }),
+        }
+      }) as unknown as typeof fetch
+
+      try {
+        await registerOpenClaw(mockApi)
+
+        const hook = registeredOnHooks.get('before_agent_start') as (
+          event: PluginHookBeforeAgentStartEvent,
+          ctx: PluginHookAgentContext
+        ) => Promise<PluginHookBeforeAgentStartResult | void>
+
+        expect(hook).toBeDefined()
+
+        // Call the hook with a specific prompt
+        const result = await hook(
+          { prompt: 'What are my food preferences?' },
+          { agentId: 'agent-1', sessionKey: 'session-1' }
+        )
+
+        // Result should have prependContext (not injectedContext)
+        if (result) {
+          expect(result).toHaveProperty('prependContext')
+          expect(result).not.toHaveProperty('injectedContext')
+        }
+
+        // Verify the search API was called with the user's actual prompt
+        const memorySearchCalls = fetchCalls.filter((url) => url.includes('/api/memories/search'))
+        expect(memorySearchCalls.length).toBeGreaterThan(0)
+        expect(memorySearchCalls[0]).toContain('food+preferences')
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    it('should return { prependContext } format, not { injectedContext }', async () => {
+      // Create a mock that will intercept the fetch
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          memories: [
+            { id: '1', content: 'User prefers dark mode', category: 'preference', score: 0.95 },
+          ],
+        }),
+      }) as unknown as typeof fetch
+
+      try {
+        await registerOpenClaw(mockApi)
+
+        const hook = registeredOnHooks.get('before_agent_start') as (
+          event: PluginHookBeforeAgentStartEvent,
+          ctx: PluginHookAgentContext
+        ) => Promise<PluginHookBeforeAgentStartResult | void>
+
+        const result = await hook(
+          { prompt: 'Tell me about my preferences' },
+          { agentId: 'agent-1', sessionKey: 'session-1' }
+        )
+
+        if (result) {
+          expect(result).toHaveProperty('prependContext')
+          expect(typeof result.prependContext).toBe('string')
+          // Must NOT have injectedContext
+          expect(result).not.toHaveProperty('injectedContext')
+        }
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    it('should pass the actual prompt to the memory search API', async () => {
+      const fetchCalls: string[] = []
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = vi.fn().mockImplementation(async (url: string) => {
+        fetchCalls.push(url)
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ memories: [] }),
+        }
+      }) as unknown as typeof fetch
+
+      try {
+        await registerOpenClaw(mockApi)
+
+        const hook = registeredOnHooks.get('before_agent_start') as (
+          event: PluginHookBeforeAgentStartEvent,
+          ctx: PluginHookAgentContext
+        ) => Promise<PluginHookBeforeAgentStartResult | void>
+
+        await hook(
+          { prompt: 'What are my food preferences?' },
+          { agentId: 'agent-1', sessionKey: 'session-1' }
+        )
+
+        // The API call should contain the user's actual prompt, not 'relevant context for this conversation'
+        const memorySearchCalls = fetchCalls.filter((url) => url.includes('/api/memories/search'))
+        expect(memorySearchCalls.length).toBeGreaterThan(0)
+
+        const searchUrl = memorySearchCalls[0]
+        expect(searchUrl).toContain('food+preferences')
+        expect(searchUrl).not.toContain('relevant+context+for+this+conversation')
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    it('should handle timeout gracefully', async () => {
+      const originalFetch = globalThis.fetch
+      // Simulate a very slow response that will exceed the hook timeout
+      globalThis.fetch = vi.fn().mockImplementation(
+        () => new Promise((resolve) => setTimeout(resolve, 60000))
+      ) as unknown as typeof fetch
+
+      try {
+        await registerOpenClaw(mockApi)
+
+        const hook = registeredOnHooks.get('before_agent_start') as (
+          event: PluginHookBeforeAgentStartEvent,
+          ctx: PluginHookAgentContext
+        ) => Promise<PluginHookBeforeAgentStartResult | void>
+
+        // The hook has a 5s internal timeout. The slow fetch will trigger it.
+        const result = await hook(
+          { prompt: 'Hello' },
+          { agentId: 'agent-1', sessionKey: 'session-1' }
+        )
+
+        // Should return void/undefined on timeout, not throw
+        expect(result).toBeUndefined()
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    }, 15000)
+
+    it('should not throw on hook execution errors', async () => {
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = vi.fn().mockRejectedValue(new Error('Network error')) as unknown as typeof fetch
+
+      try {
+        await registerOpenClaw(mockApi)
+
+        const hook = registeredOnHooks.get('before_agent_start') as (
+          event: PluginHookBeforeAgentStartEvent,
+          ctx: PluginHookAgentContext
+        ) => Promise<PluginHookBeforeAgentStartResult | void>
+
+        // Should not throw even when network fails
+        const result = await hook(
+          { prompt: 'Hello' },
+          { agentId: 'agent-1', sessionKey: 'session-1' }
+        )
+
+        expect(result).toBeUndefined()
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    }, 15000)
+  })
+
+  describe('agent_end hook behavior', () => {
+    it('should accept the correct event payload shape', async () => {
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = vi.fn().mockImplementation(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ captured: 1 }),
+      })) as unknown as typeof fetch
+
+      try {
+        await registerOpenClaw(mockApi)
+
+        const hook = registeredOnHooks.get('agent_end') as (
+          event: PluginHookAgentEndEvent,
+          ctx: PluginHookAgentContext
+        ) => Promise<void>
+
+        expect(hook).toBeDefined()
+
+        // Should not throw with correct payload
+        await expect(
+          hook(
+            {
+              messages: [{ role: 'user', content: 'Hello' }],
+              success: true,
+              durationMs: 1000,
+            },
+            { agentId: 'agent-1', sessionKey: 'session-1' }
+          )
+        ).resolves.not.toThrow()
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    })
+
+    it('should not throw on empty messages', async () => {
+      await registerOpenClaw(mockApi)
+
+      const hook = registeredOnHooks.get('agent_end') as (
+        event: PluginHookAgentEndEvent,
+        ctx: PluginHookAgentContext
+      ) => Promise<void>
+
+      await expect(
+        hook(
+          { messages: [], success: true },
+          { agentId: 'agent-1', sessionKey: 'session-1' }
+        )
+      ).resolves.not.toThrow()
+    })
+
+    it('should call context capture API with conversation data', async () => {
+      const fetchCalls: { url: string; body: string }[] = []
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        fetchCalls.push({ url, body: init?.body as string || '' })
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ captured: 1 }),
+        }
+      }) as unknown as typeof fetch
+
+      try {
+        await registerOpenClaw(mockApi)
+
+        const hook = registeredOnHooks.get('agent_end') as (
+          event: PluginHookAgentEndEvent,
+          ctx: PluginHookAgentContext
+        ) => Promise<void>
+
+        await hook(
+          {
+            messages: [
+              { role: 'user', content: 'Remember I prefer dark mode' },
+              { role: 'assistant', content: 'Noted, you prefer dark mode.' },
+            ],
+            success: true,
+            durationMs: 5000,
+          },
+          { agentId: 'agent-1', sessionKey: 'session-1' }
+        )
+
+        // Should have made a capture API call
+        const captureCalls = fetchCalls.filter((c) => c.url.includes('/api/context/capture'))
+        expect(captureCalls.length).toBeGreaterThan(0)
+      } finally {
+        globalThis.fetch = originalFetch
+      }
     })
   })
 

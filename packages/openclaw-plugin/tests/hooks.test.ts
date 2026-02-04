@@ -76,10 +76,14 @@ describe('lifecycle hooks', () => {
     })
 
     describe('execution', () => {
-      it('should fetch context from API', async () => {
+      it('should fetch context from memory search API', async () => {
         const mockGet = vi.fn().mockResolvedValue({
           success: true,
-          data: { context: 'User prefers dark mode.' },
+          data: {
+            memories: [
+              { id: '1', content: 'User prefers dark mode.', category: 'preference', score: 0.95 },
+            ],
+          },
         })
         const client = { ...mockApiClient, get: mockGet }
 
@@ -93,15 +97,22 @@ describe('lifecycle hooks', () => {
         await hook({ prompt: 'Tell me about my preferences' })
 
         expect(mockGet).toHaveBeenCalledWith(
-          expect.stringContaining('/api/context'),
+          expect.stringContaining('/api/memories/search'),
           expect.any(Object)
         )
+        // Verify the prompt is passed as the search query
+        const callUrl = mockGet.mock.calls[0][0] as string
+        expect(callUrl).toContain('q=Tell+me+about+my+preferences')
       })
 
       it('should return prependContext on success', async () => {
         const mockGet = vi.fn().mockResolvedValue({
           success: true,
-          data: { context: 'User prefers dark mode.' },
+          data: {
+            memories: [
+              { id: '1', content: 'User prefers dark mode.', category: 'preference', score: 0.95 },
+            ],
+          },
         })
         const client = { ...mockApiClient, get: mockGet }
 
@@ -155,10 +166,10 @@ describe('lifecycle hooks', () => {
         expect(mockLogger.error).toHaveBeenCalled()
       })
 
-      it('should return null when context is empty', async () => {
+      it('should return null when no memories found', async () => {
         const mockGet = vi.fn().mockResolvedValue({
           success: true,
-          data: { context: '' },
+          data: { memories: [] },
         })
         const client = { ...mockApiClient, get: mockGet }
 
@@ -204,7 +215,7 @@ describe('lifecycle hooks', () => {
       it('should not log prompt content at info level', async () => {
         const mockGet = vi.fn().mockResolvedValue({
           success: true,
-          data: { context: 'Some context' },
+          data: { memories: [{ id: '1', content: 'Some context', category: 'fact' }] },
         })
         const client = { ...mockApiClient, get: mockGet }
 
