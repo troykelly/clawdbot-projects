@@ -69,8 +69,11 @@ RUN mkdir -p /var/cache/nginx /var/run \
     && chown -R nginx:nginx /var/cache/nginx /var/run /usr/share/nginx/html \
     && chmod -R 755 /var/cache/nginx /var/run /usr/share/nginx/html
 
-# Environment variable for API URL (with default)
-ENV API_URL=http://localhost:3000
+# Environment variables for API proxy configuration
+# API_HOST: hostname of the API container (default: api)
+# API_PORT: port the API listens on (default: 3000)
+ENV API_HOST=api
+ENV API_PORT=3000
 
 # Use non-root nginx user (UID 101)
 USER nginx

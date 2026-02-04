@@ -105,11 +105,11 @@ http:
           interval: 10s
           timeout: 3s
 
-    # App service
+    # App service (nginx listens on 8080)
     app-service:
       loadBalancer:
         servers:
-          - url: "http://app:3000"
+          - url: "http://app:8080"
         healthCheck:
           path: /
           interval: 10s
