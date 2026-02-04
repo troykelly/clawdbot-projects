@@ -1,0 +1,50 @@
+# App-specific dockerignore
+# This is used when building from docker/app context
+
+# Git
+.git
+.github
+.gitignore
+
+# Dependencies (installed during build)
+node_modules
+.pnpm-store
+pnpm-store
+
+# Build outputs (generated during build)
+dist
+.dist
+src/api/static/app
+
+# Development files
+.devcontainer
+.vscode
+*.log
+.env
+.env.*
+!.env.example
+
+# Tests
+tests
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+vitest.config.ts
+
+# Documentation
+docs
+*.md
+LICENSE
+
+# Other docker files (not needed for app build)
+docker/api
+docker/migrate
+docker/postgres
+docker-compose*.yml
+
+# Ops and scripts
+ops
+scripts
+migrations
+skills
