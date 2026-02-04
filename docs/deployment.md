@@ -148,11 +148,13 @@ The basic deployment uses `docker-compose.yml` for localhost or behind-proxy dep
    POSTGRES_PASSWORD=$(openssl rand -base64 32)
    COOKIE_SECRET=$(openssl rand -base64 48)
    S3_SECRET_KEY=$(openssl rand -hex 32)
+   AUTH_SECRET=$(openssl rand -base64 32)
 
    # Update .env file
    sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=${POSTGRES_PASSWORD}/" .env
    sed -i "s/^COOKIE_SECRET=.*/COOKIE_SECRET=${COOKIE_SECRET}/" .env
    sed -i "s/^S3_SECRET_KEY=.*/S3_SECRET_KEY=${S3_SECRET_KEY}/" .env
+   sed -i "s/^OPENCLAW_PROJECTS_AUTH_SECRET=.*/OPENCLAW_PROJECTS_AUTH_SECRET=${AUTH_SECRET}/" .env
    ```
 
 4. **Start the services:**
@@ -221,6 +223,7 @@ The production deployment uses `docker-compose.traefik.yml` which includes:
    POSTGRES_PASSWORD=<strong-password>
    COOKIE_SECRET=<base64-string>
    S3_SECRET_KEY=<hex-string>
+   OPENCLAW_PROJECTS_AUTH_SECRET=<base64-string>
 
    # Required for TLS
    DOMAIN=example.com
@@ -271,6 +274,7 @@ The production deployment uses `docker-compose.traefik.yml` which includes:
 | `POSTGRES_PASSWORD` | PostgreSQL password | `openssl rand -base64 32` |
 | `COOKIE_SECRET` | Session cookie signing key | `openssl rand -base64 48` |
 | `S3_SECRET_KEY` | SeaweedFS S3 secret key | `openssl rand -hex 32` |
+| `OPENCLAW_PROJECTS_AUTH_SECRET` | Auth secret for OpenClaw plugin | `openssl rand -base64 32` |
 
 ### Required for Production (Traefik)
 
@@ -348,6 +352,17 @@ The production deployment uses `docker-compose.traefik.yml` which includes:
 |----------|---------|-------------|
 | `RATE_LIMIT_MAX` | `100` | Max requests per window |
 | `RATE_LIMIT_WINDOW_MS` | `60000` | Rate limit window (ms) |
+
+### Authentication
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENCLAW_PROJECTS_AUTH_SECRET` | (empty) | Auth secret for OpenClaw plugin requests |
+| `OPENCLAW_PROJECTS_AUTH_SECRET_FILE` | (empty) | Load auth secret from file (Docker secrets) |
+| `OPENCLAW_PROJECTS_AUTH_SECRET_COMMAND` | (empty) | Load auth secret from command (1Password, etc.) |
+| `OPENCLAW_PROJECTS_AUTH_DISABLED` | `false` | Disable auth (NOT RECOMMENDED for production) |
+
+At least one of `OPENCLAW_PROJECTS_AUTH_SECRET`, `_FILE`, or `_COMMAND` must be set for production deployments. Set `OPENCLAW_PROJECTS_AUTH_DISABLED=true` only for local development.
 
 ---
 
