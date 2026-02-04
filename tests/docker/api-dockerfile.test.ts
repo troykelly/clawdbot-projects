@@ -201,7 +201,7 @@ describe('API Docker image build and runtime', () => {
   });
 });
 
-describe('Multi-architecture build', () => {
+describe('Multi-architecture build support', () => {
   const canRunDocker = (() => {
     try {
       execSync('docker info', { stdio: 'ignore' });
@@ -221,18 +221,55 @@ describe('Multi-architecture build', () => {
     }
   })();
 
-  it.skipIf(!hasBuildx)('validates Dockerfile for linux/amd64 and linux/arm64', () => {
-    // This performs a full multi-arch build to verify compatibility
-    const result = execSync(
-      `docker buildx build --platform linux/amd64,linux/arm64 \
+  // Check if multi-platform is supported by the current buildx driver
+  const supportsMultiPlatform = (() => {
+    if (!hasBuildx) return false;
+    try {
+      // Test if the driver supports multi-platform by trying a dry run
+      // The docker driver doesn't support multi-platform, but docker-container does
+      const output = execSync('docker buildx inspect --bootstrap 2>&1', {
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      });
+      // If we see "docker" driver type, multi-platform is not supported
+      // If we see "docker-container" or similar, it is supported
+      return !output.includes('Driver: docker\n');
+    } catch {
+      return false;
+    }
+  })();
+
+  it('Dockerfile is valid for multi-architecture builds (structure check)', () => {
+    // This test validates the Dockerfile structure is suitable for multi-arch
+    // without actually performing the build (which requires specific buildx drivers)
+    const dockerfileContent = readFileSync(DOCKERFILE_PATH, 'utf-8');
+
+    // Check that the Dockerfile uses a multi-arch compatible base image
+    expect(dockerfileContent).toMatch(/FROM\s+node:25-bookworm-slim/);
+
+    // Check no platform-specific commands that would break multi-arch
+    expect(dockerfileContent).not.toMatch(/--platform=linux\/amd64/);
+    expect(dockerfileContent).not.toMatch(/apt-get.*:amd64/);
+
+    // Base image node:25-bookworm-slim supports both amd64 and arm64
+    // This is a static verification since we can't always run multi-arch builds
+  });
+
+  it.skipIf(!supportsMultiPlatform)(
+    'builds for linux/amd64 and linux/arm64 with compatible buildx driver',
+    () => {
+      // This test only runs when a multi-platform capable driver is available
+      const result = execSync(
+        `docker buildx build --platform linux/amd64,linux/arm64 \
         -f docker/api/Dockerfile \
         --build-arg BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
         --build-arg VCS_REF=test \
         --build-arg VERSION=test \
         .`,
-      { cwd: ROOT_DIR, encoding: 'utf-8', stdio: 'pipe', timeout: 600000 }
-    );
-    // If we get here without error, the build passed
-    expect(true).toBe(true);
-  }, 600000);
+        { cwd: ROOT_DIR, encoding: 'utf-8', stdio: 'pipe', timeout: 600000 }
+      );
+      expect(true).toBe(true);
+    },
+    600000
+  );
 });
