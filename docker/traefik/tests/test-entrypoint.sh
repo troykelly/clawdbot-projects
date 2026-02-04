@@ -359,19 +359,91 @@ test_error_message_helpful() {
     run_test
     local test_dir
     test_dir=$(setup_test_env)
-    
+
     unset DOMAIN 2>/dev/null || true
     unset ACME_EMAIL 2>/dev/null || true
-    
+
     local output
     output=$("${test_dir}/entrypoint-test.sh" 2>&1 || true)
-    
+
     if echo "${output}" | grep -q "DOMAIN" && echo "${output}" | grep -q "ACME_EMAIL"; then
         pass "Error message mentions missing variables"
     else
         fail "Error message should mention which variables are missing"
     fi
-    
+
+    cleanup_test_env "${test_dir}"
+}
+
+# Test 16: Custom config directory should be created
+test_custom_config_dir_created() {
+    run_test
+    local test_dir
+    test_dir=$(setup_test_env)
+
+    export DOMAIN="example.com"
+    export ACME_EMAIL="test@example.com"
+
+    "${test_dir}/entrypoint-test.sh" >/dev/null 2>&1
+
+    local custom_dir="${test_dir}/etc/traefik/dynamic/custom"
+
+    if [ -d "${custom_dir}" ]; then
+        pass "Custom config directory is created"
+    else
+        fail "Custom config directory should be created at ${custom_dir}"
+    fi
+
+    cleanup_test_env "${test_dir}"
+}
+
+# Test 17: Custom config directory should be empty (for user extensions)
+test_custom_config_dir_empty() {
+    run_test
+    local test_dir
+    test_dir=$(setup_test_env)
+
+    export DOMAIN="example.com"
+    export ACME_EMAIL="test@example.com"
+
+    "${test_dir}/entrypoint-test.sh" >/dev/null 2>&1
+
+    local custom_dir="${test_dir}/etc/traefik/dynamic/custom"
+    local file_count
+    file_count=$(find "${custom_dir}" -type f 2>/dev/null | wc -l)
+
+    if [ "${file_count}" -eq 0 ]; then
+        pass "Custom config directory is empty (ready for user extensions)"
+    else
+        fail "Custom config directory should be empty, found ${file_count} files"
+    fi
+
+    cleanup_test_env "${test_dir}"
+}
+
+# Test 18: System and custom directories should be separate
+test_system_custom_separation() {
+    run_test
+    local test_dir
+    test_dir=$(setup_test_env)
+
+    export DOMAIN="example.com"
+    export ACME_EMAIL="test@example.com"
+
+    "${test_dir}/entrypoint-test.sh" >/dev/null 2>&1
+
+    local system_dir="${test_dir}/etc/traefik/dynamic/system"
+    local custom_dir="${test_dir}/etc/traefik/dynamic/custom"
+    local system_config="${system_dir}/config.yml"
+
+    # Verify both directories exist and are separate
+    if [ -d "${system_dir}" ] && [ -d "${custom_dir}" ] && \
+       [ -f "${system_config}" ] && [ ! -f "${custom_dir}/config.yml" ]; then
+        pass "System and custom directories are properly separated"
+    else
+        fail "System config should only be in system/, not in custom/"
+    fi
+
     cleanup_test_env "${test_dir}"
 }
 
@@ -396,6 +468,9 @@ test_app_router
 test_trusted_ips_yaml
 test_disable_http
 test_error_message_helpful
+test_custom_config_dir_created
+test_custom_config_dir_empty
+test_system_custom_separation
 
 echo ""
 echo "======================================"

@@ -7,6 +7,7 @@ set -euo pipefail
 
 # Directory paths
 SYSTEM_CONFIG_DIR="/etc/traefik/dynamic/system"
+CUSTOM_CONFIG_DIR="/etc/traefik/dynamic/custom"
 TEMPLATE_FILE="/etc/traefik/templates/dynamic-config.yml.template"
 OUTPUT_FILE="${SYSTEM_CONFIG_DIR}/config.yml"
 
@@ -53,10 +54,26 @@ generate_trusted_ips_yaml() {
     done
 }
 
+# Create required directories for dynamic configuration
+create_directories() {
+    # System config directory - managed by this script
+    mkdir -p "${SYSTEM_CONFIG_DIR}"
+
+    # Custom config directory - for user extensions
+    # Users can bind-mount their own configs here via docker-compose.override.yml
+    # Traefik watches this directory with file provider (watch: true)
+    # Malformed YAML in custom/ won't break system routes in system/
+    mkdir -p "${CUSTOM_CONFIG_DIR}"
+
+    echo "Created config directories:"
+    echo "  System: ${SYSTEM_CONFIG_DIR}"
+    echo "  Custom: ${CUSTOM_CONFIG_DIR} (for user extensions)"
+}
+
 # Generate the dynamic configuration from template
 generate_config() {
-    # Ensure output directory exists
-    mkdir -p "${SYSTEM_CONFIG_DIR}"
+    # Ensure output directories exist
+    create_directories
     
     # Set defaults for optional variables
     export TRUSTED_IPS="${TRUSTED_IPS:-}"
