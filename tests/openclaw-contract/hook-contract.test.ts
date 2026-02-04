@@ -47,31 +47,40 @@ describe('OpenClaw Hook Contract Validation', () => {
     });
   });
 
-  describe('Current plugin issues identified', () => {
+  describe('Plugin contract fixes verified', () => {
     const registerPath = resolve(PLUGIN_DIR, 'src/register-openclaw.ts');
 
-    it('should identify hardcoded query in auto-recall', () => {
+    it('should use event.prompt for auto-recall (not hardcoded query)', () => {
       const content = readFileSync(registerPath, 'utf-8');
-      // This is the BUG: hardcoded query instead of using event.prompt
-      expect(content).toContain("'relevant context for this conversation'");
+      // FIX (#553): Previously used hardcoded 'relevant context for this conversation'.
+      // Now correctly passes event.prompt for semantic search.
+      expect(content).not.toContain("'relevant context for this conversation'");
+      expect(content).toContain('event.prompt');
     });
 
-    it('should identify wrong hook registration method', () => {
+    it('should use api.on for modern hook registration with legacy fallback', () => {
       const content = readFileSync(registerPath, 'utf-8');
-      // BUG: uses registerHook instead of api.on
+      // Uses api.on('before_agent_start', ...) with legacy registerHook fallback
+      expect(content).toContain("api.on(");
+      expect(content).toContain("'before_agent_start'");
+      // Legacy fallback still present for compatibility
       expect(content).toContain("api.registerHook('beforeAgentStart'");
     });
 
-    it('should identify wrong return format', () => {
+    it('should return prependContext (not injectedContext)', () => {
       const content = readFileSync(registerPath, 'utf-8');
-      // BUG: returns injectedContext instead of prependContext
-      expect(content).toContain('injectedContext');
+      // FIX (#553): Previously returned injectedContext.
+      // Now correctly returns prependContext per OpenClaw hook contract.
+      expect(content).not.toContain('injectedContext');
+      expect(content).toContain('prependContext');
     });
 
-    it('should identify untyped event parameter', () => {
+    it('should type event parameter with PluginHookBeforeAgentStartEvent', () => {
       const content = readFileSync(registerPath, 'utf-8');
-      // BUG: event is typed as unknown instead of PluginHookBeforeAgentStartEvent
-      expect(content).toContain('event: unknown');
+      // FIX: event is now properly typed instead of unknown
+      expect(content).toContain('PluginHookBeforeAgentStartEvent');
+      // The typed handler uses the proper type, not event: unknown
+      expect(content).toContain('event: PluginHookBeforeAgentStartEvent');
     });
   });
 
