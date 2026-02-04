@@ -1,0 +1,190 @@
+# custom-route.example.yml
+#
+# Example custom route configuration for Traefik file provider.
+# Place this file (or similar) in your traefik-custom/ directory.
+#
+# This is the secondary extension method for advanced routing needs:
+#   - Routes to external services (not in Docker)
+#   - Complex routing rules
+#   - Custom middlewares
+#   - Load balancing across multiple backends
+#
+# Usage:
+#   1. Create a traefik-custom/ directory in your project root:
+#      mkdir -p traefik-custom
+#
+#   2. Copy this example:
+#      cp docker/traefik/examples/custom-route.example.yml traefik-custom/my-routes.yml
+#
+#   3. Mount it via docker-compose.override.yml (see docker-compose.override.example.yml)
+#
+#   4. Traefik watches the directory and auto-reloads on changes
+#
+# Safety Notes:
+#   - Malformed YAML here does NOT break system routes
+#   - System routes in /etc/traefik/dynamic/system/ take precedence
+#   - Use unique router/middleware/service names to avoid conflicts
+#   - Traefik logs errors for invalid configs but keeps serving valid ones
+#
+# Reference:
+#   https://doc.traefik.io/traefik/routing/routers/
+#   https://doc.traefik.io/traefik/routing/services/
+#   https://doc.traefik.io/traefik/middlewares/overview/
+
+http:
+  # ===========================================================================
+  # Custom Middlewares
+  # ===========================================================================
+  #
+  # Define middlewares that can be used by your custom routers.
+  # Reference system middlewares with @file suffix (e.g., security-headers@file)
+  #
+  middlewares:
+    # Example: Basic auth middleware
+    # Generate credentials: htpasswd -nb user password | openssl base64
+    custom-basic-auth:
+      basicAuth:
+        users:
+          # user:password (password is "secret" - CHANGE THIS!)
+          - "user:$apr1$xyz123$abcdefghijklmnop"
+
+    # Example: IP allowlist for internal services
+    internal-only:
+      ipAllowList:
+        sourceRange:
+          - "10.0.0.0/8"
+          - "172.16.0.0/12"
+          - "192.168.0.0/16"
+          - "127.0.0.1/32"
+
+    # Example: Strip path prefix
+    strip-api-prefix:
+      stripPrefix:
+        prefixes:
+          - "/api/v1"
+
+    # Example: Add request headers
+    custom-headers:
+      headers:
+        customRequestHeaders:
+          X-Custom-Header: "my-value"
+          X-Forwarded-By: "traefik"
+
+  # ===========================================================================
+  # Custom Routers
+  # ===========================================================================
+  #
+  # Define routers that match requests and route them to services.
+  #
+  routers:
+    # Example: Route to an external monitoring service
+    # external-monitoring:
+    #   rule: "Host(`monitoring.example.com`)"
+    #   service: monitoring-service
+    #   entryPoints:
+    #     - websecure
+    #   middlewares:
+    #     - internal-only
+    #     - security-headers@file  # Reuse system middleware
+    #   tls:
+    #     certResolver: letsencrypt
+
+    # Example: Route a path prefix to a different backend
+    # legacy-api:
+    #   rule: "Host(`api.example.com`) && PathPrefix(`/v1`)"
+    #   service: legacy-api-service
+    #   entryPoints:
+    #     - websecure
+    #   middlewares:
+    #     - strip-api-prefix
+    #     - security-headers@file
+    #   tls:
+    #     certResolver: letsencrypt
+    #   # Lower priority so system routes match first
+    #   priority: 1
+
+    # Example: Internal admin panel with basic auth
+    # admin-panel:
+    #   rule: "Host(`admin.example.com`)"
+    #   service: admin-service
+    #   entryPoints:
+    #     - websecure
+    #   middlewares:
+    #     - custom-basic-auth
+    #     - internal-only
+    #     - security-headers@file
+    #   tls:
+    #     certResolver: letsencrypt
+
+  # ===========================================================================
+  # Custom Services
+  # ===========================================================================
+  #
+  # Define backend services that routers can forward requests to.
+  #
+  services:
+    # Example: External service (not in Docker)
+    # monitoring-service:
+    #   loadBalancer:
+    #     servers:
+    #       - url: "http://192.168.1.100:9090"
+    #     healthCheck:
+    #       path: /-/healthy
+    #       interval: 30s
+    #       timeout: 5s
+
+    # Example: Load balanced service with multiple backends
+    # legacy-api-service:
+    #   loadBalancer:
+    #     servers:
+    #       - url: "http://legacy-api-1:8080"
+    #       - url: "http://legacy-api-2:8080"
+    #     healthCheck:
+    #       path: /health
+    #       interval: 10s
+    #       timeout: 3s
+    #     sticky:
+    #       cookie:
+    #         name: srv_id
+    #         secure: true
+    #         httpOnly: true
+
+    # Example: Weighted round robin
+    # weighted-service:
+    #   weighted:
+    #     services:
+    #       - name: primary-backend
+    #         weight: 3
+    #       - name: canary-backend
+    #         weight: 1
+
+    # Example: Mirroring (send copy of traffic to another service)
+    # mirrored-service:
+    #   mirroring:
+    #     service: production-backend
+    #     mirrors:
+    #       - name: shadow-backend
+    #         percent: 10
+
+# ===========================================================================
+# TCP Routing (for non-HTTP protocols)
+# ===========================================================================
+#
+# Uncomment for TCP services like databases, message queues, etc.
+#
+# tcp:
+#   routers:
+#     postgres-external:
+#       rule: "HostSNI(`db.example.com`)"
+#       service: postgres-service
+#       entryPoints:
+#         - postgres
+#       tls:
+#         certResolver: letsencrypt
+#         passthrough: true
+#
+#   services:
+#     postgres-service:
+#       loadBalancer:
+#         servers:
+#           - address: "postgres:5432"

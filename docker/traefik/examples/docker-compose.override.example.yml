@@ -1,0 +1,113 @@
+# docker-compose.override.example.yml
+#
+# Example docker-compose override file for adding custom services and Traefik routes.
+# Copy this file to docker-compose.override.yml in your project root and modify as needed.
+#
+# This file demonstrates two extension patterns:
+#   1. Docker Labels: Services register routes directly via Traefik labels
+#   2. File Provider: Mount custom YAML configs for additional routes
+#
+# Usage:
+#   cp docker/traefik/examples/docker-compose.override.example.yml docker-compose.override.yml
+#   # Edit docker-compose.override.yml
+#   docker compose -f docker-compose.traefik.yml -f docker-compose.override.yml up -d
+#
+# Safety Notes:
+#   - System routes (api, app) are defined in /etc/traefik/dynamic/system/
+#   - Custom routes go in /etc/traefik/dynamic/custom/
+#   - Malformed YAML in custom/ does NOT break system routes
+#   - System routes cannot be overridden by custom configs (Traefik uses first match)
+#   - Use unique router names to avoid conflicts
+
+services:
+  # =============================================================================
+  # Example 1: Adding a service with Docker labels (whoami test service)
+  # =============================================================================
+  #
+  # This demonstrates the primary extension method: Docker labels.
+  # Traefik's Docker provider automatically discovers labeled services.
+  #
+  whoami:
+    image: traefik/whoami:latest
+    labels:
+      # Enable Traefik for this container
+      - "traefik.enable=true"
+
+      # Define the router
+      - "traefik.http.routers.whoami.rule=Host(`whoami.${DOMAIN}`)"
+      - "traefik.http.routers.whoami.entrypoints=websecure"
+      - "traefik.http.routers.whoami.tls.certResolver=letsencrypt"
+
+      # Apply security middlewares (reuse system middlewares)
+      - "traefik.http.routers.whoami.middlewares=security-headers@file"
+
+      # Define the service (port the container listens on)
+      - "traefik.http.services.whoami.loadbalancer.server.port=80"
+    networks:
+      - traefik
+
+  # =============================================================================
+  # Example 2: Adding Grafana with Docker labels
+  # =============================================================================
+  #
+  # Real-world example: Adding a monitoring dashboard
+  #
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   volumes:
+  #     - grafana-data:/var/lib/grafana
+  #   environment:
+  #     - GF_SERVER_ROOT_URL=https://grafana.${DOMAIN}
+  #     - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN}`)"
+  #     - "traefik.http.routers.grafana.entrypoints=websecure"
+  #     - "traefik.http.routers.grafana.tls.certResolver=letsencrypt"
+  #     - "traefik.http.routers.grafana.middlewares=security-headers@file"
+  #     - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+  #   networks:
+  #     - traefik
+
+  # =============================================================================
+  # Example 3: Adding Portainer with Docker labels
+  # =============================================================================
+  #
+  # Real-world example: Adding a Docker management UI
+  #
+  # portainer:
+  #   image: portainer/portainer-ce:latest
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock:ro
+  #     - portainer-data:/data
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN}`)"
+  #     - "traefik.http.routers.portainer.entrypoints=websecure"
+  #     - "traefik.http.routers.portainer.tls.certResolver=letsencrypt"
+  #     - "traefik.http.routers.portainer.middlewares=security-headers@file"
+  #     - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+  #   networks:
+  #     - traefik
+
+  # =============================================================================
+  # Traefik: Mount custom config directory (File Provider extension)
+  # =============================================================================
+  #
+  # This extends the traefik service to mount a custom config directory.
+  # Use this when you need routes to external services or complex configs.
+  #
+  traefik:
+    volumes:
+      # Mount custom config directory for file provider routes
+      # Place your *.yml files in traefik-custom/ and they'll be auto-loaded
+      - ./traefik-custom:/etc/traefik/dynamic/custom:ro
+
+networks:
+  traefik:
+    external: true
+
+# Uncomment if using Grafana/Portainer examples:
+# volumes:
+#   grafana-data:
+#   portainer-data:
