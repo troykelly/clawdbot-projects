@@ -107,8 +107,12 @@ describe('Frontend App Dockerfile', () => {
   });
 
   describe('Environment configuration', () => {
-    it('should define API_URL environment variable', () => {
-      expect(dockerfileContent).toMatch(/ENV\s+API_URL/);
+    it('should define API_HOST environment variable', () => {
+      expect(dockerfileContent).toMatch(/ENV\s+API_HOST/);
+    });
+
+    it('should define API_PORT environment variable', () => {
+      expect(dockerfileContent).toMatch(/ENV\s+API_PORT/);
     });
   });
 
@@ -205,6 +209,28 @@ describe('Nginx Configuration Template', () => {
   describe('Health check', () => {
     it('should have health check endpoint', () => {
       expect(nginxConfigContent).toContain('location = /health');
+    });
+  });
+
+  describe('API proxy', () => {
+    it('should have API proxy location block', () => {
+      expect(nginxConfigContent).toContain('location /api/');
+    });
+
+    it('should proxy to API_HOST and API_PORT', () => {
+      expect(nginxConfigContent).toMatch(/proxy_pass.*\$\{API_HOST\}.*\$\{API_PORT\}/);
+    });
+
+    it('should set proxy headers', () => {
+      expect(nginxConfigContent).toContain('proxy_set_header Host');
+      expect(nginxConfigContent).toContain('proxy_set_header X-Real-IP');
+      expect(nginxConfigContent).toContain('proxy_set_header X-Forwarded-For');
+      expect(nginxConfigContent).toContain('proxy_set_header X-Forwarded-Proto');
+    });
+
+    it('should support WebSocket connections', () => {
+      expect(nginxConfigContent).toContain('proxy_set_header Upgrade');
+      expect(nginxConfigContent).toContain('proxy_set_header Connection');
     });
   });
 });

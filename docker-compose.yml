@@ -191,8 +191,10 @@ services:
       api:
         condition: service_healthy
     environment:
-      # The API URL the frontend will use for requests
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:${API_PORT:-3000}}
+      # API proxy configuration for nginx
+      # Nginx proxies /api/* requests to the API container
+      API_HOST: api
+      API_PORT: "3000"
     ports:
       - "${FRONTEND_PORT:-8080}:8080"
     healthcheck:
