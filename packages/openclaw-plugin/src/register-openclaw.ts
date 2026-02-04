@@ -4,7 +4,7 @@
  * This module implements the OpenClaw Gateway plugin API pattern:
  * - Default export function taking `api` object
  * - Tools registered via `api.registerTool()`
- * - Hooks registered via `api.registerHook()`
+ * - Hooks registered via `api.on()` (modern) or `api.registerHook()` (legacy fallback)
  * - CLI registered via `api.registerCli()`
  */
 
@@ -15,6 +15,10 @@ import type {
   JSONSchema,
   ToolContext,
   ToolResult,
+  PluginHookBeforeAgentStartEvent,
+  PluginHookAgentContext,
+  PluginHookBeforeAgentStartResult,
+  PluginHookAgentEndEvent,
 } from './types/openclaw-api.js'
 import { validateRawConfig, resolveConfigSecrets, redactConfig, type PluginConfig } from './config.js'
 import { createLogger, type Logger } from './logger.js'
@@ -46,6 +50,12 @@ import {
 } from './tools/index.js'
 import { createGatewayMethods, registerGatewayRpcMethods } from './gateway/rpc-methods.js'
 import { createNotificationService } from './services/notification-service.js'
+import {
+  createAutoRecallHook,
+  createAutoCaptureHook,
+  type AutoRecallHookOptions,
+  type AutoCaptureHookOptions,
+} from './hooks.js'
 
 /** Plugin state stored during registration */
 interface PluginState {
@@ -1766,34 +1776,124 @@ export const registerOpenClaw: PluginInitializer = async (api: OpenClawPluginAPI
     api.registerTool(tool)
   }
 
-  // Register hooks
+  // Register hooks using api.on() (modern) with fallback to registerHook (legacy)
+  // The auto-recall and auto-capture hooks are consolidated from hooks.ts
+  // into this registration path using the correct OpenClaw hook contract.
+
+  /** Default timeout for hook execution (5 seconds) */
+  const HOOK_TIMEOUT_MS = 5000
+
   if (config.autoRecall) {
-    api.registerHook('beforeAgentStart', async (event: unknown) => {
-      // Auto-recall relevant memories at conversation start
-      logger.debug('Auto-recall hook triggered')
+    // Create the auto-recall hook using the consolidated hooks.ts implementation
+    const autoRecallHook = createAutoRecallHook({
+      client: apiClient,
+      logger,
+      config,
+      userId,
+      timeoutMs: HOOK_TIMEOUT_MS,
+    })
+
+    /**
+     * before_agent_start handler: Extracts the user's prompt from the event,
+     * performs semantic memory search, and returns { prependContext } to inject
+     * relevant memories into the conversation.
+     */
+    const beforeAgentStartHandler = async (
+      event: PluginHookBeforeAgentStartEvent,
+      _ctx: PluginHookAgentContext
+    ): Promise<PluginHookBeforeAgentStartResult | void> => {
+      logger.debug('Auto-recall hook triggered', {
+        promptLength: event.prompt?.length ?? 0,
+      })
+
       try {
-        const result = await handlers.memory_recall({
-          query: 'relevant context for this conversation',
-          limit: config.maxRecallMemories,
-        })
-        if (result.success && result.data) {
-          const eventObj = typeof event === 'object' && event !== null ? event : {}
-          return { ...eventObj, injectedContext: result.data.content }
+        // Use the consolidated hook which has timeout protection and
+        // uses the user's actual prompt for semantic search
+        const result = await autoRecallHook({ prompt: event.prompt })
+
+        if (result && result.prependContext) {
+          return { prependContext: result.prependContext }
         }
       } catch (error) {
-        logger.error('Auto-recall failed', { error })
+        // Hook errors should never crash the agent
+        logger.error('Auto-recall hook failed', {
+          error: error instanceof Error ? error.message : String(error),
+        })
       }
-      return event
-    })
+      // Return undefined (void) when no context is available
+    }
+
+    if (typeof api.on === 'function') {
+      // Modern registration: api.on('before_agent_start', handler)
+      // Cast needed: our typed handler satisfies the runtime contract but
+      // the generic api.on() signature uses (...args: unknown[]) => unknown
+      api.on(
+        'before_agent_start',
+        beforeAgentStartHandler as (...args: unknown[]) => unknown
+      )
+    } else {
+      // Legacy fallback: api.registerHook('beforeAgentStart', handler)
+      api.registerHook('beforeAgentStart', beforeAgentStartHandler as (event: unknown) => Promise<unknown>)
+    }
   }
 
   if (config.autoCapture) {
-    api.registerHook('agentEnd', async (event: unknown) => {
-      // Auto-capture hook would analyze conversation for important info
-      logger.debug('Auto-capture hook triggered')
-      // Implementation would extract and store relevant memories
-      return event
+    // Create the auto-capture hook using the consolidated hooks.ts implementation
+    const autoCaptureHook = createAutoCaptureHook({
+      client: apiClient,
+      logger,
+      config,
+      userId,
+      timeoutMs: HOOK_TIMEOUT_MS * 2, // Allow more time for capture (10s)
     })
+
+    /**
+     * agent_end handler: Extracts messages from the completed conversation,
+     * filters sensitive content, and posts to the capture API for memory storage.
+     */
+    const agentEndHandler = async (
+      event: PluginHookAgentEndEvent,
+      _ctx: PluginHookAgentContext
+    ): Promise<void> => {
+      logger.debug('Auto-capture hook triggered', {
+        messageCount: event.messages?.length ?? 0,
+        success: event.success,
+      })
+
+      try {
+        // Convert the event messages to the format expected by the capture hook
+        const messages = (event.messages ?? []).map((msg) => {
+          if (typeof msg === 'object' && msg !== null) {
+            const msgObj = msg as Record<string, unknown>
+            return {
+              role: String(msgObj.role ?? 'unknown'),
+              content: String(msgObj.content ?? ''),
+            }
+          }
+          return { role: 'unknown', content: String(msg) }
+        })
+
+        await autoCaptureHook({ messages })
+      } catch (error) {
+        // Hook errors should never crash the agent
+        logger.error('Auto-capture hook failed', {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+
+    if (typeof api.on === 'function') {
+      // Modern registration: api.on('agent_end', handler)
+      // Cast needed: our typed handler satisfies the runtime contract but
+      // the generic api.on() signature uses (...args: unknown[]) => unknown
+      api.on(
+        'agent_end',
+        agentEndHandler as (...args: unknown[]) => unknown
+      )
+    } else {
+      // Legacy fallback: api.registerHook('agentEnd', handler)
+      api.registerHook('agentEnd', agentEndHandler as (event: unknown) => Promise<unknown>)
+    }
   }
 
   // Register Gateway RPC methods (Issue #324)
