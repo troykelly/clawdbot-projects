@@ -28,7 +28,7 @@ export function MobileNav({
     <nav
       data-testid="mobile-nav"
       className={cn(
-        'fixed inset-x-0 bottom-0 z-50 h-16 items-center justify-around border-t border-border bg-surface/95 backdrop-blur-sm',
+        'fixed inset-x-0 bottom-0 z-50 h-16 items-center justify-around border-t border-border bg-surface',
         'flex md:!hidden', // Force hide on desktop
         className
       )}

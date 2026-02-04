@@ -80,7 +80,7 @@ export function AppShell({
       {/* Main Content */}
       <main className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
-        <header className="flex h-14 shrink-0 items-center gap-4 border-b border-border bg-surface px-4">
+        <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-4 border-b border-border bg-surface px-4">
           {breadcrumbs.length > 0 && (
             <Breadcrumb
               items={breadcrumbs}
@@ -91,7 +91,7 @@ export function AppShell({
         </header>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-auto pb-16 md:pb-0">
+        <div className="flex-1 overflow-y-auto p-4 pb-20 md:p-6 md:pb-0">
           {children}
         </div>
       </main>
