@@ -48,8 +48,8 @@ export function Sidebar({
         data-testid="sidebar"
         data-collapsed={collapsed}
         className={cn(
-          'flex h-full flex-col border-r border-border/50 bg-gradient-to-b from-surface to-background transition-all duration-300 ease-out',
-          collapsed ? 'w-[68px]' : 'w-60',
+          'flex h-full flex-col border-r border-border bg-surface z-20 transition-all duration-300 ease-out',
+          collapsed ? 'w-16' : 'w-60',
           className
         )}
       >
@@ -148,7 +148,7 @@ export function Sidebar({
         </ScrollArea>
 
         {/* Footer */}
-        <div className="border-t border-border/50 p-3 space-y-1">
+        <div className="border-t border-border p-3 space-y-1">
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -162,7 +162,7 @@ export function Sidebar({
                 {!collapsed && (
                   <span className="flex flex-1 items-center justify-between">
                     <span>Search</span>
-                    <kbd className="hidden rounded border border-border/50 bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline-block">
+                    <kbd className="hidden rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline-block">
                       ⌘K
                     </kbd>
                   </span>
