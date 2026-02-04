@@ -209,9 +209,49 @@ EOF
   fi
 }
 
+install_openclaw_gateway() {
+  local gateway_dir="/workspaces/openclaw-gateway"
+
+  if [[ -f "$gateway_dir/package.json" ]]; then
+    log "OpenClaw gateway source already present at $gateway_dir"
+    # Ensure dependencies are installed (volume may persist but node_modules may not)
+    if [[ ! -d "$gateway_dir/node_modules" ]]; then
+      log "Installing OpenClaw gateway dependencies..."
+      (cd "$gateway_dir" && pnpm install --frozen-lockfile 2>/dev/null || pnpm install) || {
+        log "WARN: Failed to install OpenClaw gateway dependencies"
+        return 1
+      }
+    fi
+    return 0
+  fi
+
+  log "Cloning OpenClaw gateway from source..."
+  if ! git clone --depth 1 https://github.com/openclaw/openclaw.git "$gateway_dir" 2>/dev/null; then
+    log "WARN: Failed to clone OpenClaw gateway. Integration testing will be unavailable."
+    log "WARN: You can manually clone: git clone https://github.com/openclaw/openclaw.git $gateway_dir"
+    return 1
+  fi
+
+  log "Installing OpenClaw gateway dependencies..."
+  (cd "$gateway_dir" && pnpm install --frozen-lockfile 2>/dev/null || pnpm install) || {
+    log "WARN: Failed to install OpenClaw gateway dependencies"
+    return 1
+  }
+
+  log "Building OpenClaw gateway..."
+  (cd "$gateway_dir" && pnpm build) || {
+    log "WARN: OpenClaw gateway build failed. Source is still available for inspection."
+    log "WARN: Try rebuilding manually: cd $gateway_dir && pnpm build"
+    return 1
+  }
+
+  log "OpenClaw gateway installed at $gateway_dir"
+}
+
 install_claude_code
 install_codex_binary
 install_plugins_user_scope
 restore_cloud_credentials
+install_openclaw_gateway
 
 log "postCreate setup complete."
