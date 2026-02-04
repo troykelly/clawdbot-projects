@@ -1,0 +1,56 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+.github
+
+# Dependencies (will be installed fresh in container)
+node_modules
+.pnpm-store
+pnpm-store
+
+# Build outputs
+dist
+.dist
+*.log
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Tests
+tests/
+*.test.ts
+*.spec.ts
+vitest.config.ts
+coverage/
+
+# UI source (API image should not contain frontend)
+src/ui/
+
+# Docker files (no need to copy into container)
+docker/
+Dockerfile*
+docker-compose*.yml
+docker-compose*.yaml
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Misc
+.turbo
+.cache
+tmp/
