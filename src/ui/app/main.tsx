@@ -28,9 +28,9 @@ const queryClient = new QueryClient({
   },
 });
 
-/** Browser router with all application routes, using /static/app as basename. */
+/** Browser router with all application routes, using /app as basename. */
 const router = createBrowserRouter(routes, {
-  basename: '/static/app',
+  basename: '/app',
 });
 
 // Mount the application
