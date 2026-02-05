@@ -11140,12 +11140,19 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
   // POST /api/notes/:id/presence - Join note presence (start viewing)
   // Security: user_email moved from query params to body (#689)
   // Type validation added (#697)
+  // UUID validation added (#701)
   app.post('/api/notes/:id/presence', async (req, reply) => {
     const {
       joinNotePresence,
     } = await import('./notes/index.ts');
 
     const params = req.params as { id: string };
+
+    // Validate noteId is a valid UUID (#701)
+    if (!isValidUUID(params.id)) {
+      return reply.code(400).send({ error: 'Invalid note ID format' });
+    }
+
     const body = req.body as {
       userEmail?: unknown;
       cursorPosition?: unknown;
@@ -11203,12 +11210,19 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
   // DELETE /api/notes/:id/presence - Leave note presence (stop viewing)
   // Security: user_email moved from query params to X-User-Email header (#689)
   // Type validation added (#697)
+  // UUID validation added (#701)
   app.delete('/api/notes/:id/presence', async (req, reply) => {
     const {
       leaveNotePresence,
     } = await import('./notes/index.ts');
 
     const params = req.params as { id: string };
+
+    // Validate noteId is a valid UUID (#701)
+    if (!isValidUUID(params.id)) {
+      return reply.code(400).send({ error: 'Invalid note ID format' });
+    }
+
     const userEmailHeader = req.headers['x-user-email'];
 
     // Validate header is a string (not array) and non-empty (#697)
@@ -11230,12 +11244,19 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
   // GET /api/notes/:id/presence - Get current viewers
   // Security: user_email moved from query params to X-User-Email header (#689)
   // Type validation added (#697)
+  // UUID validation added (#701)
   app.get('/api/notes/:id/presence', async (req, reply) => {
     const {
       getNotePresence,
     } = await import('./notes/index.ts');
 
     const params = req.params as { id: string };
+
+    // Validate noteId is a valid UUID (#701)
+    if (!isValidUUID(params.id)) {
+      return reply.code(400).send({ error: 'Invalid note ID format' });
+    }
+
     const userEmailHeader = req.headers['x-user-email'];
 
     // Validate header is a string (not array) and non-empty (#697)
@@ -11263,12 +11284,19 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
   // PUT /api/notes/:id/presence/cursor - Update cursor position
   // Security: user_email moved from query params to body (#689)
   // Type validation added (#697)
+  // UUID validation added (#701)
   app.put('/api/notes/:id/presence/cursor', async (req, reply) => {
     const {
       updateCursorPosition,
     } = await import('./notes/index.ts');
 
     const params = req.params as { id: string };
+
+    // Validate noteId is a valid UUID (#701)
+    if (!isValidUUID(params.id)) {
+      return reply.code(400).send({ error: 'Invalid note ID format' });
+    }
+
     const body = req.body as {
       userEmail?: unknown;
       cursorPosition?: unknown;
