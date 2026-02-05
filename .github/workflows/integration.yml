@@ -87,23 +87,6 @@ jobs:
             fi
           fi
 
-      - name: Debug - Test db and seaweedfs startup only
-        run: |
-          echo "=== Testing db + seaweedfs startup with compose ==="
-          # Start only db and seaweedfs (no dependencies on them)
-          docker compose up db seaweedfs --no-deps -d
-          echo "=== Containers started, waiting 15s... ==="
-          sleep 15
-          echo "=== Container status after 15s ==="
-          docker compose ps -a
-          echo "=== DB Container logs ==="
-          docker compose logs db --tail=100
-          echo "=== SeaweedFS Container logs ==="
-          docker compose logs seaweedfs --tail=100
-          echo "=== Stopping test containers ==="
-          docker compose down -v
-          echo "=== End debug ==="
-
       - name: Run integration tests
         run: |
           chmod +x scripts/integration-test.sh
