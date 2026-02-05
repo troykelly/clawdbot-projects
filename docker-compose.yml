@@ -32,25 +32,23 @@ services:
       - shared_preload_libraries=timescaledb,pg_cron
       - -c
       - cron.database_name=${POSTGRES_DB:-openclaw}
+    # Note: PostgreSQL 18+ uses versioned subdirectories (e.g., /18/docker)
+    # Mount at /var/lib/postgresql to allow proper version management
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - db_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-openclaw} -d $${POSTGRES_DB:-openclaw}"]
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 10s
+    # PostgreSQL requires more shared memory than Docker's default 64MB
+    shm_size: 256mb
     # Container hardening
+    # Note: PostgreSQL requires more capabilities than other services for initialization
+    # We keep no-new-privileges but don't drop all capabilities
     security_opt:
       - no-new-privileges:true
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - DAC_OVERRIDE
-      - FOWNER
-      - SETGID
-      - SETUID
     deploy:
       resources:
         limits:
@@ -79,10 +77,16 @@ services:
       retries: 20
       start_period: 30s
     # Container hardening
+    # Note: SeaweedFS entrypoint needs CHOWN for /data ownership and
+    # SETGID/SETUID for su-exec user switching
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
     deploy:
       resources:
         limits:
@@ -216,6 +220,8 @@ services:
       - /tmp:mode=1777,size=32M
       - /var/cache/nginx:mode=1777,size=32M
       - /var/run:mode=1777,size=8M
+      # Nginx entrypoint writes processed templates here
+      - /etc/nginx/conf.d:mode=1777,size=1M
     security_opt:
       - no-new-privileges:true
     cap_drop:

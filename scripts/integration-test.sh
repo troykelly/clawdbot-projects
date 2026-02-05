@@ -135,7 +135,19 @@ log_info "Timeout: ${TIMEOUT}s"
 log_info "Starting compose stack..."
 
 # Pull images first (speeds up subsequent runs)
-docker compose -f "$COMPOSE_FILE" pull --quiet 2>/dev/null || log_warn "Pull failed, using cached images"
+# If pull fails (e.g., images not published yet for PR branch), build locally
+if ! docker compose -f "$COMPOSE_FILE" pull 2>&1 | tee /tmp/pull.log; then
+  if grep -q "manifest unknown" /tmp/pull.log; then
+    log_warn "Published images not available, building locally..."
+    # Build images directly since compose file uses image: not build:
+    docker build -f "${PROJECT_ROOT}/docker/postgres/Dockerfile" -t ghcr.io/troykelly/openclaw-projects-db:latest "$PROJECT_ROOT"
+    docker build -f "${PROJECT_ROOT}/docker/migrate/Dockerfile" -t ghcr.io/troykelly/openclaw-projects-migrate:latest "$PROJECT_ROOT"
+    docker build -f "${PROJECT_ROOT}/docker/api/Dockerfile" -t ghcr.io/troykelly/openclaw-projects-api:latest "$PROJECT_ROOT"
+    docker build -f "${PROJECT_ROOT}/docker/app/Dockerfile" -t ghcr.io/troykelly/openclaw-projects-app:latest "$PROJECT_ROOT"
+  else
+    log_warn "Pull failed, will try to use cached images"
+  fi
+fi
 
 # Start the stack
 docker compose -f "$COMPOSE_FILE" up -d
@@ -161,31 +173,36 @@ wait_for_healthy() {
       return 1
     fi
 
-    # Check container health status
-    local health_status
-    health_status=$(docker compose -f "$COMPOSE_FILE" ps --format json 2>/dev/null | \
-      jq -r --arg svc "$service_name" 'select(.Service == $svc) | .Health // .State' 2>/dev/null || echo "unknown")
-
-    if [[ "$health_status" == "healthy" ]]; then
-      return 0
-    fi
-
-    # For migrate service, check if it exited successfully
+    # For migrate service, check if it exited successfully using docker ps
     if [[ "$service_name" == "migrate" ]]; then
-      local exit_code
-      exit_code=$(docker compose -f "$COMPOSE_FILE" ps --format json 2>/dev/null | \
-        jq -r --arg svc "$service_name" 'select(.Service == $svc) | .ExitCode // -1' 2>/dev/null || echo "-1")
-      local state
-      state=$(docker compose -f "$COMPOSE_FILE" ps --format json 2>/dev/null | \
-        jq -r --arg svc "$service_name" 'select(.Service == $svc) | .State' 2>/dev/null || echo "unknown")
+      # Check for exited containers with code 0
+      local exited_ok
+      exited_ok=$(docker ps -a --filter "name=openclaw-migrate" --filter "status=exited" --format "{{.Status}}" 2>/dev/null || echo "")
 
-      if [[ "$state" == "exited" && "$exit_code" == "0" ]]; then
+      if [[ "$exited_ok" == *"Exited (0)"* ]]; then
         return 0
-      elif [[ "$state" == "exited" && "$exit_code" != "0" ]]; then
-        log_error "Migration service exited with code $exit_code"
+      fi
+
+      # Check if exited with non-zero code
+      local exited_fail
+      exited_fail=$(docker ps -a --filter "name=openclaw-migrate" --filter "status=exited" --format "{{.Status}}" 2>/dev/null | grep -v "Exited (0)" || echo "")
+
+      if [[ -n "$exited_fail" ]]; then
+        log_error "Migration service exited with error: $exited_fail"
         docker compose -f "$COMPOSE_FILE" logs migrate 2>&1 | tail -50
         return 1
       fi
+
+      sleep 2
+      continue
+    fi
+
+    # For other services, check health status using docker compose ps
+    local ps_output
+    ps_output=$(docker compose -f "$COMPOSE_FILE" ps "$service_name" 2>/dev/null || echo "")
+
+    if echo "$ps_output" | grep -q "(healthy)"; then
+      return 0
     fi
 
     sleep 2
@@ -196,45 +213,45 @@ wait_for_healthy() {
 log_info "  Waiting for database..."
 if wait_for_healthy "db"; then
   log_success "  Database is healthy"
-  ((TESTS_PASSED++))
+  TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  ((TESTS_FAILED++))
+  TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
 # Wait for SeaweedFS
 log_info "  Waiting for SeaweedFS..."
 if wait_for_healthy "seaweedfs"; then
   log_success "  SeaweedFS is healthy"
-  ((TESTS_PASSED++))
+  TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  ((TESTS_FAILED++))
+  TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
 # Wait for migrations to complete
 log_info "  Waiting for migrations..."
 if wait_for_healthy "migrate"; then
   log_success "  Migrations completed successfully"
-  ((TESTS_PASSED++))
+  TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  ((TESTS_FAILED++))
+  TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
 # Wait for API
 log_info "  Waiting for API..."
 if wait_for_healthy "api"; then
   log_success "  API is healthy"
-  ((TESTS_PASSED++))
+  TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  ((TESTS_FAILED++))
+  TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
 # Wait for frontend app
 log_info "  Waiting for frontend app..."
 if wait_for_healthy "app"; then
   log_success "  Frontend app is healthy"
-  ((TESTS_PASSED++))
+  TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-  ((TESTS_FAILED++))
+  TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
 # =============================================================================
@@ -249,15 +266,15 @@ if [[ "$API_RESPONSE" != "FAILED" ]]; then
   # Check if response indicates healthy status
   if echo "$API_RESPONSE" | jq -e '.status == "ok" or .status == "healthy" or .healthy == true' >/dev/null 2>&1; then
     log_success "API /health endpoint returns healthy status"
-    ((TESTS_PASSED++))
+    TESTS_PASSED=$((TESTS_PASSED + 1))
   else
     # Accept any 200 response as healthy
     log_success "API /health endpoint responds (200 OK)"
-    ((TESTS_PASSED++))
+    TESTS_PASSED=$((TESTS_PASSED + 1))
   fi
 else
   log_error "API /health endpoint is not responding at $API_HEALTH_URL"
-  ((TESTS_FAILED++))
+  TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
 # =============================================================================
@@ -272,15 +289,15 @@ if [[ "$FRONTEND_RESPONSE" != "FAILED" ]]; then
   # Check if response contains HTML
   if echo "$FRONTEND_RESPONSE" | grep -qi "<!doctype html\|<html"; then
     log_success "Frontend serves HTML content"
-    ((TESTS_PASSED++))
+    TESTS_PASSED=$((TESTS_PASSED + 1))
   else
     log_error "Frontend response does not contain HTML"
     echo "Response preview: $(echo "$FRONTEND_RESPONSE" | head -c 200)"
-    ((TESTS_FAILED++))
+    TESTS_FAILED=$((TESTS_FAILED + 1))
   fi
 else
   log_error "Frontend is not responding at $FRONTEND_URL"
-  ((TESTS_FAILED++))
+  TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
 # =============================================================================
@@ -312,29 +329,29 @@ PUT_RESPONSE=$(curl -sf -X PUT \
 
 if [[ "$PUT_RESPONSE" == "OK" ]]; then
   log_success "SeaweedFS S3 PUT operation succeeded"
-  ((TESTS_PASSED++))
+  TESTS_PASSED=$((TESTS_PASSED + 1))
 
   # Try to GET the object back
   GET_RESPONSE=$(curl -sf "${S3_ENDPOINT}/${TEST_BUCKET}/${TEST_KEY}" 2>/dev/null || echo "FAILED")
 
   if [[ "$GET_RESPONSE" == "$TEST_CONTENT" ]]; then
     log_success "SeaweedFS S3 GET operation succeeded (content verified)"
-    ((TESTS_PASSED++))
+    TESTS_PASSED=$((TESTS_PASSED + 1))
   elif [[ "$GET_RESPONSE" != "FAILED" ]]; then
     log_success "SeaweedFS S3 GET operation succeeded"
-    ((TESTS_PASSED++))
+    TESTS_PASSED=$((TESTS_PASSED + 1))
   else
     log_error "SeaweedFS S3 GET operation failed"
-    ((TESTS_FAILED++))
+    TESTS_FAILED=$((TESTS_FAILED + 1))
   fi
 
   # Clean up: delete the test object
   curl -sf -X DELETE "${S3_ENDPOINT}/${TEST_BUCKET}/${TEST_KEY}" 2>/dev/null || true
 else
   log_error "SeaweedFS S3 PUT operation failed"
-  ((TESTS_FAILED++))
+  TESTS_FAILED=$((TESTS_FAILED + 1))
   # Still count GET as failed since PUT failed
-  ((TESTS_FAILED++))
+  TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
 # =============================================================================
@@ -349,7 +366,7 @@ DB_CHECK=$(docker compose -f "$COMPOSE_FILE" exec -T db \
 
 if [[ "$DB_CHECK" != "FAILED" && "$DB_CHECK" -gt 0 ]]; then
   log_success "Database has $DB_CHECK clean migrations applied"
-  ((TESTS_PASSED++))
+  TESTS_PASSED=$((TESTS_PASSED + 1))
 else
   # Alternative check: see if any tables exist
   TABLE_COUNT=$(docker compose -f "$COMPOSE_FILE" exec -T db \
@@ -358,11 +375,11 @@ else
 
   if [[ "$TABLE_COUNT" -gt 0 ]]; then
     log_success "Database has $TABLE_COUNT tables in public schema"
-    ((TESTS_PASSED++))
+    TESTS_PASSED=$((TESTS_PASSED + 1))
   else
     log_error "Database migration verification failed"
     docker compose -f "$COMPOSE_FILE" logs migrate 2>&1 | tail -30
-    ((TESTS_FAILED++))
+    TESTS_FAILED=$((TESTS_FAILED + 1))
   fi
 fi
 
@@ -375,10 +392,10 @@ for table in "${ESSENTIAL_TABLES[@]}"; do
 
   if [[ -n "$TABLE_EXISTS" ]]; then
     log_success "Essential table '$table' exists"
-    ((TESTS_PASSED++))
+    TESTS_PASSED=$((TESTS_PASSED + 1))
   else
     log_error "Essential table '$table' is missing"
-    ((TESTS_FAILED++))
+    TESTS_FAILED=$((TESTS_FAILED + 1))
   fi
 done
 
