@@ -3348,6 +3348,19 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
     const email = await getSessionEmail(req);
 
     try {
+      // Check file ownership (Issue #615)
+      const metadata = await getFileMetadata(pool, params.id);
+      if (!metadata) {
+        await pool.end();
+        return reply.code(404).send({ error: 'File not found' });
+      }
+
+      // Allow if user uploaded the file, or if auth is disabled (dev mode)
+      if (metadata.uploadedBy !== email && !isAuthDisabled()) {
+        await pool.end();
+        return reply.code(403).send({ error: 'You do not have permission to share this file' });
+      }
+
       const result = await createFileShare(pool, storage, {
         fileId: params.id,
         expiresIn,
