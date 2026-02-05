@@ -87,6 +87,7 @@ export function useNotePresence({
   const [error, setError] = useState<Error | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const hasJoinedRef = useRef(false);
+  const previousStatusRef = useRef<string | null>(null);
 
   // Use optional realtime hook - returns null when not inside RealtimeProvider (#692)
   const realtimeContext = useRealtimeOptional();
@@ -141,8 +142,12 @@ export function useNotePresence({
       hasJoinedRef.current = false;
       setIsConnected(false);
     } catch (err) {
-      // Don't throw on leave errors, just log
-      console.error('[NotePresence] Error leaving:', err);
+      // Don't throw on leave errors - leaving is a best-effort operation
+      // Log in development only to avoid information leakage in production (#693)
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.error('[NotePresence] Error leaving:', err);
+      }
     }
   }, [noteId, userEmail, apiUrl]);
 
@@ -161,8 +166,12 @@ export function useNotePresence({
         }
       );
     } catch (err) {
-      // Don't throw on cursor update errors, just log
-      console.error('[NotePresence] Error updating cursor:', err);
+      // Don't throw on cursor update errors - cursor updates are non-critical
+      // Log in development only to avoid information leakage in production (#693)
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.error('[NotePresence] Error updating cursor:', err);
+      }
     }
   }, [noteId, userEmail, apiUrl]);
 
@@ -244,6 +253,56 @@ export function useNotePresence({
       unsubscribes.forEach((unsub) => unsub());
     };
   }, [realtimeContext, handlePresenceEvent]);
+
+  /**
+   * Reconnect presence when WebSocket reconnects (#699)
+   * Monitors the realtime connection status and re-joins presence
+   * when the connection is restored after a disconnect.
+   */
+  useEffect(() => {
+    if (!realtimeContext) return;
+
+    const currentStatus = realtimeContext.status;
+    const previousStatus = previousStatusRef.current;
+
+    // If we transitioned from a non-connected state to connected, re-join
+    if (
+      previousStatus !== null &&
+      previousStatus !== 'connected' &&
+      currentStatus === 'connected' &&
+      hasJoinedRef.current
+    ) {
+      // Reset the joined flag to allow re-joining
+      hasJoinedRef.current = false;
+      void join();
+    }
+
+    previousStatusRef.current = currentStatus;
+  }, [realtimeContext, realtimeContext?.status, join]);
+
+  /**
+   * Clean up stale presence viewers (#700)
+   * Removes viewers who haven't been seen in the last 5 minutes.
+   * This handles cases where leave events are missed due to network issues.
+   */
+  useEffect(() => {
+    const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+    const CLEANUP_INTERVAL_MS = 60 * 1000; // Check every minute
+
+    const cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      setViewers((prev) =>
+        prev.filter((viewer) => {
+          const lastSeenTime = new Date(viewer.lastSeenAt).getTime();
+          return now - lastSeenTime < STALE_THRESHOLD_MS;
+        })
+      );
+    }, CLEANUP_INTERVAL_MS);
+
+    return () => {
+      clearInterval(cleanupInterval);
+    };
+  }, []);
 
   /**
    * Auto-join on mount, leave on unmount

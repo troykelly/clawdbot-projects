@@ -1281,7 +1281,11 @@ const theme = {
 };
 
 function onError(error: Error): void {
-  console.error('[LexicalEditor]', error);
+  // Log in development only to avoid information leakage in production (#676)
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-console
+    console.error('[LexicalEditor]', error);
+  }
 }
 
 /**
@@ -1369,7 +1373,11 @@ function MermaidRenderer({
           if (!isMounted) return;
 
           // Show error message in the placeholder (escaped for safety)
-          console.error('[MermaidRenderer]', error);
+          // Log in development only to avoid information leakage in production (#676)
+          if (import.meta.env.DEV) {
+            // eslint-disable-next-line no-console
+            console.error('[MermaidRenderer]', error);
+          }
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
           // Clear placeholder

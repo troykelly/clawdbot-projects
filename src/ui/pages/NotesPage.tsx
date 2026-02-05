@@ -1,6 +1,6 @@
 /**
  * Notes page component.
- * Part of Epic #338, Issues #624, #625
+ * Part of Epic #338, Issues #624, #625, #664 (Error Boundary)
  *
  * Primary notes interface with three-panel layout:
  * - Notebooks sidebar (collapsible)
@@ -15,8 +15,8 @@
  * - /notebooks/:notebookId - Notes in specific notebook
  * - /notebooks/:notebookId/notes/:noteId - Note in context of notebook
  */
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useState, useCallback, useMemo, useEffect, useRef, type ErrorInfo } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
 import { cn, validateUrlParam } from '@/ui/lib/utils';
 import { Button } from '@/ui/components/ui/button';
@@ -35,6 +35,7 @@ import {
   EmptyState,
 } from '@/ui/components/feedback';
 import { Card, CardContent } from '@/ui/components/ui/card';
+import { ErrorBoundary } from '@/ui/components/error-boundary';
 
 // Notes components
 import {
@@ -86,7 +87,36 @@ import {
   getValidationErrorMessage,
 } from '@/ui/lib/validation';
 
+/**
+ * Error handler for the Notes page error boundary.
+ * Logs errors in development mode only (#693).
+ */
+function handleNotesPageError(error: Error, errorInfo: ErrorInfo): void {
+  // Log in development only to avoid information leakage in production
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-console
+    console.error('[NotesPage] Error caught by boundary:', error, errorInfo);
+  }
+  // TODO: Add error reporting service integration (#664)
+}
+
+/**
+ * Notes page with error boundary wrapper.
+ * Issue #664: Adds graceful error handling for the Notes page.
+ */
 export function NotesPage(): React.JSX.Element {
+  return (
+    <ErrorBoundary
+      title="Notes Error"
+      description="Something went wrong loading your notes. Please try again."
+      onError={handleNotesPageError}
+    >
+      <NotesPageContent />
+    </ErrorBoundary>
+  );
+}
+
+function NotesPageContent(): React.JSX.Element {
   // URL params for deep linking - validate to prevent malformed URLs
   const { noteId: rawNoteId, notebookId: rawNotebookId } = useParams<{
     noteId?: string;
