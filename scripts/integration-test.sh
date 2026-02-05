@@ -173,12 +173,24 @@ wait_for_healthy() {
       return 1
     fi
 
-    # Check container health status using docker compose ps for the specific service
-    local ps_json
-    ps_json=$(docker compose -f "$COMPOSE_FILE" ps "$service_name" --format json 2>/dev/null || echo "")
+    # Get container name for this service
+    local container_name
+    container_name=$(docker compose -f "$COMPOSE_FILE" ps -q "$service_name" 2>/dev/null | head -1)
+
+    if [[ -z "$container_name" ]]; then
+      sleep 2
+      continue
+    fi
+
+    # Check container health/state using docker inspect (more reliable)
+    local inspect_json
+    inspect_json=$(docker inspect "$container_name" 2>/dev/null || echo "[]")
+
+    local state
+    state=$(echo "$inspect_json" | jq -r '.[0].State.Status // "unknown"' 2>/dev/null || echo "unknown")
 
     local health_status
-    health_status=$(echo "$ps_json" | jq -r '.Health // .State // "unknown"' 2>/dev/null || echo "unknown")
+    health_status=$(echo "$inspect_json" | jq -r '.[0].State.Health.Status // "none"' 2>/dev/null || echo "none")
 
     if [[ "$health_status" == "healthy" ]]; then
       return 0
@@ -187,9 +199,7 @@ wait_for_healthy() {
     # For migrate service, check if it exited successfully
     if [[ "$service_name" == "migrate" ]]; then
       local exit_code
-      exit_code=$(echo "$ps_json" | jq -r '.ExitCode // -1' 2>/dev/null || echo "-1")
-      local state
-      state=$(echo "$ps_json" | jq -r '.State // "unknown"' 2>/dev/null || echo "unknown")
+      exit_code=$(echo "$inspect_json" | jq -r '.[0].State.ExitCode // -1' 2>/dev/null || echo "-1")
 
       if [[ "$state" == "exited" && "$exit_code" == "0" ]]; then
         return 0
