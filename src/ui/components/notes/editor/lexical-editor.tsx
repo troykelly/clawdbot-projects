@@ -1,6 +1,6 @@
 /**
  * Lexical-based rich text editor for notes.
- * Part of Epic #338, Issues #629, #630, #631, #632, #633
+ * Part of Epic #338, Issues #629, #630, #631, #632, #633, #674
  *
  * Features:
  * - True WYSIWYG editing with Lexical
@@ -13,11 +13,11 @@
  * - Mermaid diagram support (#632)
  * - LaTeX math rendering (#633)
  *
- * Security: Preview mode uses simple markdown-to-HTML conversion.
- * For production, sanitize HTML with DOMPurify to prevent XSS.
+ * Security: All HTML output is sanitized with DOMPurify to prevent XSS (#674).
  */
 
 import React, { useCallback, useEffect, useState, useRef } from 'react';
+import DOMPurify from 'dompurify';
 import { LexicalComposer } from '@lexical/react/LexicalComposer';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { ContentEditable } from '@lexical/react/LexicalContentEditable';
@@ -261,8 +261,53 @@ function highlightCode(code: string, language?: string): string {
 }
 
 /**
+ * DOMPurify configuration for sanitizing HTML output.
+ * Allows safe HTML tags for markdown rendering while stripping dangerous content.
+ * Issue #674: Prevents XSS attacks via dangerouslySetInnerHTML.
+ */
+const DOMPURIFY_CONFIG: DOMPurify.Config = {
+  ALLOWED_TAGS: [
+    // Text formatting
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'span', 'div',
+    'strong', 'em', 'del', 'u', 'sub', 'sup',
+    // Lists
+    'ul', 'ol', 'li',
+    // Code
+    'pre', 'code',
+    // Tables
+    'table', 'thead', 'tbody', 'tr', 'th', 'td',
+    // Other
+    'blockquote', 'a', 'br', 'hr',
+  ],
+  ALLOWED_ATTR: [
+    'href', 'class', 'id',
+    // Table attributes
+    'colspan', 'rowspan',
+    // Accessibility attributes
+    'role', 'aria-label', 'title',
+    // Mermaid diagram data attribute (safe - stored as text, not executed as HTML)
+    'data-mermaid',
+  ],
+  // Allow data-* attributes pattern for Mermaid and other safe data attributes
+  ADD_ATTR: ['data-mermaid'],
+  // Only allow safe URL protocols for links
+  ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
+  // Explicitly forbid dangerous event handlers
+  FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur'],
+  FORBID_TAGS: ['script', 'style', 'iframe', 'form', 'input', 'button', 'select', 'textarea', 'object', 'embed'],
+};
+
+/**
+ * Sanitize HTML to prevent XSS attacks.
+ * Uses DOMPurify with a strict configuration for markdown-rendered content.
+ */
+function sanitizeHtml(html: string): string {
+  return DOMPurify.sanitize(html, DOMPURIFY_CONFIG);
+}
+
+/**
  * Simple markdown to HTML conversion for preview mode.
- * NOTE: In production, sanitize output with DOMPurify before rendering.
+ * Output is sanitized with DOMPurify before rendering (#674).
  */
 function markdownToHtml(markdown: string): string {
   // First, extract and process code blocks to prevent them from being escaped
@@ -924,9 +969,8 @@ export function LexicalNoteEditor({
     }
   }, [onSave, markdownContent]);
 
-  // Preview HTML
-  // NOTE: In production, sanitize this output with DOMPurify before rendering
-  const previewHtml = mode === 'preview' || readOnly ? markdownToHtml(markdownContent) : '';
+  // Preview HTML - sanitized with DOMPurify to prevent XSS (#674)
+  const previewHtml = mode === 'preview' || readOnly ? sanitizeHtml(markdownToHtml(markdownContent)) : '';
 
   // Character and word count
   const charCount = markdownContent.length;
@@ -944,7 +988,7 @@ export function LexicalNoteEditor({
   if (readOnly || mode === 'preview') {
     return (
       <div className={cn('flex flex-col border rounded-lg overflow-hidden', className)}>
-        {/* Security: previewHtml should be sanitized with DOMPurify in production.
+        {/* HTML is sanitized with DOMPurify - see sanitizeHtml() (#674).
             Mermaid diagrams are rendered separately with securityLevel: 'strict'. */}
         <div
           ref={previewContainerRef}
