@@ -1229,6 +1229,204 @@ $$
   });
 
   // ============================================
+  // Note Presence Tracking
+  // ============================================
+
+  describe('Note Presence Tracking', () => {
+    it('tracks user joining and leaving a note', async () => {
+      // 1. Create a note
+      const createRes = await app.inject({
+        method: 'POST',
+        url: '/api/notes',
+        payload: {
+          user_email: primaryUser,
+          title: 'Presence Test Note',
+          content: 'Testing presence tracking',
+        },
+      });
+      expect(createRes.statusCode).toBe(201);
+      const noteId = createRes.json().id;
+
+      // 2. User joins presence
+      const joinRes = await app.inject({
+        method: 'POST',
+        url: `/api/notes/${noteId}/presence`,
+        payload: { userEmail: primaryUser },
+      });
+      expect(joinRes.statusCode).toBe(200);
+      const joinData = joinRes.json();
+      expect(joinData.collaborators).toBeInstanceOf(Array);
+      expect(joinData.collaborators.some((u: { email: string }) => u.email === primaryUser)).toBe(true);
+
+      // 3. Get current viewers
+      const getRes = await app.inject({
+        method: 'GET',
+        url: `/api/notes/${noteId}/presence`,
+        headers: { 'x-user-email': primaryUser },
+      });
+      expect(getRes.statusCode).toBe(200);
+      expect(getRes.json().collaborators).toBeInstanceOf(Array);
+
+      // 4. User leaves presence
+      const leaveRes = await app.inject({
+        method: 'DELETE',
+        url: `/api/notes/${noteId}/presence`,
+        headers: { 'x-user-email': primaryUser },
+      });
+      expect(leaveRes.statusCode).toBe(204);
+    });
+
+    it('updates cursor position', async () => {
+      // 1. Create a note
+      const createRes = await app.inject({
+        method: 'POST',
+        url: '/api/notes',
+        payload: {
+          user_email: primaryUser,
+          title: 'Cursor Test Note',
+          content: 'Testing cursor tracking',
+        },
+      });
+      const noteId = createRes.json().id;
+
+      // 2. Join presence
+      await app.inject({
+        method: 'POST',
+        url: `/api/notes/${noteId}/presence`,
+        payload: { userEmail: primaryUser },
+      });
+
+      // 3. Update cursor position
+      const cursorRes = await app.inject({
+        method: 'PUT',
+        url: `/api/notes/${noteId}/presence/cursor`,
+        payload: {
+          userEmail: primaryUser,
+          cursorPosition: { line: 5, column: 10 },
+        },
+      });
+      expect(cursorRes.statusCode).toBe(204);
+    });
+
+    it('returns 403 when user lacks access to note', async () => {
+      // 1. Create a private note as primary user
+      const createRes = await app.inject({
+        method: 'POST',
+        url: '/api/notes',
+        payload: {
+          user_email: primaryUser,
+          title: 'Private Presence Note',
+          content: 'Private content',
+          visibility: 'private',
+        },
+      });
+      const noteId = createRes.json().id;
+
+      // 2. Secondary user tries to join presence - should fail
+      const joinRes = await app.inject({
+        method: 'POST',
+        url: `/api/notes/${noteId}/presence`,
+        payload: { userEmail: secondaryUser },
+      });
+      expect(joinRes.statusCode).toBe(403);
+
+      // 3. Secondary user tries to get presence - should fail
+      const getRes = await app.inject({
+        method: 'GET',
+        url: `/api/notes/${noteId}/presence`,
+        headers: { 'x-user-email': secondaryUser },
+      });
+      expect(getRes.statusCode).toBe(403);
+    });
+
+    it('allows shared users to join presence', async () => {
+      // 1. Create a note as primary user
+      const createRes = await app.inject({
+        method: 'POST',
+        url: '/api/notes',
+        payload: {
+          user_email: primaryUser,
+          title: 'Shared Presence Note',
+          content: 'Shared content',
+          visibility: 'shared',
+        },
+      });
+      const noteId = createRes.json().id;
+
+      // 2. Share with secondary user
+      await app.inject({
+        method: 'POST',
+        url: `/api/notes/${noteId}/share`,
+        payload: {
+          user_email: primaryUser,
+          email: secondaryUser,
+          permission: 'read',
+        },
+      });
+
+      // 3. Secondary user can now join presence
+      const joinRes = await app.inject({
+        method: 'POST',
+        url: `/api/notes/${noteId}/presence`,
+        payload: { userEmail: secondaryUser },
+      });
+      expect(joinRes.statusCode).toBe(200);
+
+      // 4. Both users should appear in presence list
+      const getRes = await app.inject({
+        method: 'GET',
+        url: `/api/notes/${noteId}/presence`,
+        headers: { 'x-user-email': primaryUser },
+      });
+      expect(getRes.statusCode).toBe(200);
+      const collaborators = getRes.json().collaborators;
+      expect(collaborators.some((u: { email: string }) => u.email === secondaryUser)).toBe(true);
+    });
+
+    it('handles joining presence with initial cursor position', async () => {
+      // 1. Create a note
+      const createRes = await app.inject({
+        method: 'POST',
+        url: '/api/notes',
+        payload: {
+          user_email: primaryUser,
+          title: 'Initial Cursor Note',
+          content: 'Testing initial cursor',
+        },
+      });
+      const noteId = createRes.json().id;
+
+      // 2. Join with cursor position
+      const joinRes = await app.inject({
+        method: 'POST',
+        url: `/api/notes/${noteId}/presence`,
+        payload: {
+          userEmail: primaryUser,
+          cursorPosition: { line: 1, column: 0 },
+        },
+      });
+      expect(joinRes.statusCode).toBe(200);
+      const collaborators = joinRes.json().collaborators;
+      const currentUser = collaborators.find((u: { email: string }) => u.email === primaryUser);
+      expect(currentUser).toBeDefined();
+      expect(currentUser.cursorPosition).toBeDefined();
+    });
+
+    it('handles non-existent note for presence operations', async () => {
+      const fakeId = '00000000-0000-0000-0000-000000000000';
+
+      // Try to join presence for non-existent note
+      const joinRes = await app.inject({
+        method: 'POST',
+        url: `/api/notes/${fakeId}/presence`,
+        payload: { userEmail: primaryUser },
+      });
+      // Should return 403 or 404 depending on implementation
+      expect([403, 404]).toContain(joinRes.statusCode);
+    });
+  });
+
+  // ============================================
   // Privacy and Access Control
   // ============================================
 
