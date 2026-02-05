@@ -15,8 +15,8 @@
  * - /notebooks/:notebookId - Notes in specific notebook
  * - /notebooks/:notebookId/notes/:noteId - Note in context of notebook
  */
-import { useState, useCallback, useMemo, useEffect } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
 import { cn, validateUrlParam } from '@/ui/lib/utils';
 import { Button } from '@/ui/components/ui/button';
@@ -93,7 +93,10 @@ export function NotesPage(): React.JSX.Element {
     notebookId?: string;
   }>();
   const navigate = useNavigate();
-  const location = useLocation();
+
+  // Ref to track internal navigations - more robust than location.state (#670)
+  // This avoids the fragility of relying on history state which can be lost
+  const isInternalNavigation = useRef(false);
 
   // Validate URL params - only accept valid UUIDs (#666)
   const urlNoteId = validateUrlParam(rawNoteId);
@@ -112,6 +115,18 @@ export function NotesPage(): React.JSX.Element {
   const [selectedNotebookId, setSelectedNotebookId] = useState<string | undefined>(urlNotebookId);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
+  /**
+   * Navigate internally - marks navigation as coming from this component
+   * so we don't reset view state in the URL sync effect.
+   */
+  const navigateInternal = useCallback(
+    (path: string) => {
+      isInternalNavigation.current = true;
+      navigate(path);
+    },
+    [navigate]
+  );
+
   // Sync notebook ID from URL - separated from view sync to avoid race conditions (#668)
   useEffect(() => {
     // Only react to URL changes, using functional update to avoid stale state
@@ -125,23 +140,25 @@ export function NotesPage(): React.JSX.Element {
 
   // Sync note view state from URL - separated from notebook sync (#668)
   useEffect(() => {
+    // Skip state reset for internal navigations (#670)
+    if (isInternalNavigation.current) {
+      isInternalNavigation.current = false;
+      return;
+    }
+
     if (urlNoteId) {
       setView({ type: 'detail', noteId: urlNoteId });
     } else {
       // Use functional update to check current state without adding to deps
       setView((current) => {
         // If in detail/history view and URL has no noteId, go back to list
-        // (skip if this is an internal navigation via location.state)
-        if (
-          (current.type === 'detail' || current.type === 'history') &&
-          !location.state?.internal
-        ) {
+        if (current.type === 'detail' || current.type === 'history') {
           return { type: 'list' };
         }
         return current;
       });
     }
-  }, [urlNoteId, location.state]);
+  }, [urlNoteId]);
 
   // Query hooks
   const {
@@ -235,21 +252,21 @@ export function NotesPage(): React.JSX.Element {
       setView({ type: 'list' });
       // Update URL
       if (notebook) {
-        navigate(`/notebooks/${notebook.id}`, { state: { internal: true } });
+        navigateInternal(`/notebooks/${notebook.id}`);
       } else {
-        navigate('/notes', { state: { internal: true } });
+        navigateInternal('/notes');
       }
     },
-    [navigate]
+    [navigateInternal]
   );
 
   const handleNoteClick = useCallback(
     (note: UINote) => {
       setView({ type: 'detail', noteId: note.id });
       // Update URL
-      navigate(buildNotePath(note.id, note.notebookId), { state: { internal: true } });
+      navigateInternal(buildNotePath(note.id, note.notebookId));
     },
-    [navigate, buildNotePath]
+    [navigateInternal, buildNotePath]
   );
 
   const handleAddNote = useCallback(() => {
@@ -259,8 +276,8 @@ export function NotesPage(): React.JSX.Element {
   const handleBack = useCallback(() => {
     setView({ type: 'list' });
     // Update URL to remove noteId
-    navigate(buildNotePath(undefined), { state: { internal: true } });
-  }, [navigate, buildNotePath]);
+    navigateInternal(buildNotePath(undefined));
+  }, [navigateInternal, buildNotePath]);
 
   const handleSaveNote = useCallback(
     async (data: {
@@ -293,9 +310,7 @@ export function NotesPage(): React.JSX.Element {
         const newNote = await createNoteMutation.mutateAsync(body);
         setView({ type: 'detail', noteId: newNote.id });
         // Update URL to include the new note ID
-        navigate(buildNotePath(newNote.id, newNote.notebookId ?? undefined), {
-          state: { internal: true },
-        });
+        navigateInternal(buildNotePath(newNote.id, newNote.notebookId ?? undefined));
       } else if (view.type === 'detail' && currentApiNote) {
         const body: UpdateNoteBody = {
           title: data.title,
@@ -307,7 +322,7 @@ export function NotesPage(): React.JSX.Element {
         await updateNoteMutation.mutateAsync({ id: currentApiNote.id, body });
       }
     },
-    [view, currentApiNote, selectedNotebookId, createNoteMutation, updateNoteMutation, navigate, buildNotePath]
+    [view, currentApiNote, selectedNotebookId, createNoteMutation, updateNoteMutation, navigateInternal, buildNotePath]
   );
 
   const handleDeleteNote = useCallback(
@@ -323,9 +338,9 @@ export function NotesPage(): React.JSX.Element {
       setDialog({ type: 'none' });
       setView({ type: 'list' });
       // Navigate back to list view
-      navigate(buildNotePath(undefined), { state: { internal: true } });
+      navigateInternal(buildNotePath(undefined));
     }
-  }, [dialog, deleteNoteMutation, navigate, buildNotePath]);
+  }, [dialog, deleteNoteMutation, navigateInternal, buildNotePath]);
 
   const handleShareNote = useCallback((note: UINote) => {
     setDialog({ type: 'share', noteId: note.id });
