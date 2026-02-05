@@ -389,6 +389,59 @@ export function NotesPage(): React.JSX.Element {
     }
   }, [dialog, deleteNotebookMutation, selectedNotebookId]);
 
+  // Memoized handlers to prevent unnecessary re-renders in child components
+  const handleRetry = useCallback(() => {
+    refetchNotes();
+    refetchNotebooks();
+  }, [refetchNotes, refetchNotebooks]);
+
+  const handleCloseDialog = useCallback(() => {
+    setDialog({ type: 'none' });
+  }, []);
+
+  // Memoized conditional handlers for NoteDetail
+  const handleShareCurrentNote = useMemo(
+    () => (currentNote ? () => handleShareNote(currentNote) : undefined),
+    [currentNote, handleShareNote]
+  );
+
+  const handleDeleteCurrentNote = useMemo(
+    () => (currentNote ? () => handleDeleteNote(currentNote) : undefined),
+    [currentNote, handleDeleteNote]
+  );
+
+  const handleTogglePinCurrentNote = useMemo(
+    () => (currentNote ? () => handleTogglePin(currentNote) : undefined),
+    [currentNote, handleTogglePin]
+  );
+
+  const handleViewHistoryIfDetail = useMemo(
+    () => (currentNote && view.type === 'detail' ? handleViewHistory : undefined),
+    [currentNote, view.type, handleViewHistory]
+  );
+
+  // Memoized notebook dialog handlers
+  const handleCreateNotebookSubmit = useCallback(
+    async (data: CreateNotebookBody | UpdateNotebookBody) => {
+      await createNotebookMutation.mutateAsync(data);
+      setDialog({ type: 'none' });
+    },
+    [createNotebookMutation]
+  );
+
+  const handleEditNotebookSubmit = useCallback(
+    async (data: CreateNotebookBody | UpdateNotebookBody) => {
+      if (dialog.type === 'editNotebook') {
+        await updateNotebookMutation.mutateAsync({
+          id: dialog.notebook.id,
+          body: data,
+        });
+        setDialog({ type: 'none' });
+      }
+    },
+    [dialog, updateNotebookMutation]
+  );
+
   // Loading state
   if (notesLoading || notebooksLoading) {
     return (
@@ -429,10 +482,7 @@ export function NotesPage(): React.JSX.Element {
           type="generic"
           title="Failed to load notes"
           description={errorMessage}
-          onRetry={() => {
-            refetchNotes();
-            refetchNotebooks();
-          }}
+          onRetry={handleRetry}
         />
       </div>
     );
@@ -499,26 +549,10 @@ export function NotesPage(): React.JSX.Element {
               notebooks={notebooks}
               onSave={handleSaveNote}
               onBack={handleBack}
-              onShare={
-                currentNote
-                  ? () => handleShareNote(currentNote)
-                  : undefined
-              }
-              onViewHistory={
-                currentNote && view.type === 'detail'
-                  ? handleViewHistory
-                  : undefined
-              }
-              onDelete={
-                currentNote
-                  ? () => handleDeleteNote(currentNote)
-                  : undefined
-              }
-              onTogglePin={
-                currentNote
-                  ? () => handleTogglePin(currentNote)
-                  : undefined
-              }
+              onShare={handleShareCurrentNote}
+              onViewHistory={handleViewHistoryIfDetail}
+              onDelete={handleDeleteCurrentNote}
+              onTogglePin={handleTogglePinCurrentNote}
               isNew={view.type === 'new'}
               saving={createNoteMutation.isPending || updateNoteMutation.isPending}
               className="flex-1"
@@ -567,9 +601,7 @@ export function NotesPage(): React.JSX.Element {
       {/* Delete Note Confirmation */}
       <Dialog
         open={dialog.type === 'deleteNote'}
-        onOpenChange={(open) => {
-          if (!open) setDialog({ type: 'none' });
-        }}
+        onOpenChange={handleCloseDialog}
       >
         <DialogContent className="sm:max-w-sm" data-testid="delete-note-dialog">
           <DialogHeader>
@@ -581,7 +613,7 @@ export function NotesPage(): React.JSX.Element {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialog({ type: 'none' })}>
+            <Button variant="outline" onClick={handleCloseDialog}>
               Cancel
             </Button>
             <Button
@@ -599,41 +631,24 @@ export function NotesPage(): React.JSX.Element {
       {/* New Notebook Dialog */}
       <NotebookFormDialog
         open={dialog.type === 'newNotebook'}
-        onOpenChange={(open) => {
-          if (!open) setDialog({ type: 'none' });
-        }}
-        onSubmit={async (data) => {
-          await createNotebookMutation.mutateAsync(data);
-          setDialog({ type: 'none' });
-        }}
+        onOpenChange={handleCloseDialog}
+        onSubmit={handleCreateNotebookSubmit}
         isSubmitting={createNotebookMutation.isPending}
       />
 
       {/* Edit Notebook Dialog */}
       <NotebookFormDialog
         open={dialog.type === 'editNotebook'}
-        onOpenChange={(open) => {
-          if (!open) setDialog({ type: 'none' });
-        }}
+        onOpenChange={handleCloseDialog}
         notebook={dialog.type === 'editNotebook' ? dialog.notebook : undefined}
-        onSubmit={async (data) => {
-          if (dialog.type === 'editNotebook') {
-            await updateNotebookMutation.mutateAsync({
-              id: dialog.notebook.id,
-              body: data,
-            });
-            setDialog({ type: 'none' });
-          }
-        }}
+        onSubmit={handleEditNotebookSubmit}
         isSubmitting={updateNotebookMutation.isPending}
       />
 
       {/* Delete Notebook Confirmation */}
       <Dialog
         open={dialog.type === 'deleteNotebook'}
-        onOpenChange={(open) => {
-          if (!open) setDialog({ type: 'none' });
-        }}
+        onOpenChange={handleCloseDialog}
       >
         <DialogContent className="sm:max-w-sm" data-testid="delete-notebook-dialog">
           <DialogHeader>
@@ -645,7 +660,7 @@ export function NotesPage(): React.JSX.Element {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialog({ type: 'none' })}>
+            <Button variant="outline" onClick={handleCloseDialog}>
               Cancel
             </Button>
             <Button
