@@ -173,41 +173,36 @@ wait_for_healthy() {
       return 1
     fi
 
-    # Get container name for this service
-    local container_name
-    container_name=$(docker compose -f "$COMPOSE_FILE" ps -q "$service_name" 2>/dev/null | head -1)
+    # For migrate service, check if it exited successfully using docker ps
+    if [[ "$service_name" == "migrate" ]]; then
+      # Check for exited containers with code 0
+      local exited_ok
+      exited_ok=$(docker ps -a --filter "name=openclaw-migrate" --filter "status=exited" --format "{{.Status}}" 2>/dev/null || echo "")
 
-    if [[ -z "$container_name" ]]; then
+      if [[ "$exited_ok" == *"Exited (0)"* ]]; then
+        return 0
+      fi
+
+      # Check if exited with non-zero code
+      local exited_fail
+      exited_fail=$(docker ps -a --filter "name=openclaw-migrate" --filter "status=exited" --format "{{.Status}}" 2>/dev/null | grep -v "Exited (0)" || echo "")
+
+      if [[ -n "$exited_fail" ]]; then
+        log_error "Migration service exited with error: $exited_fail"
+        docker compose -f "$COMPOSE_FILE" logs migrate 2>&1 | tail -50
+        return 1
+      fi
+
       sleep 2
       continue
     fi
 
-    # Check container health/state using docker inspect (more reliable)
-    local inspect_json
-    inspect_json=$(docker inspect "$container_name" 2>/dev/null || echo "[]")
+    # For other services, check health status using docker compose ps
+    local ps_output
+    ps_output=$(docker compose -f "$COMPOSE_FILE" ps "$service_name" 2>/dev/null || echo "")
 
-    local state
-    state=$(echo "$inspect_json" | jq -r '.[0].State.Status // "unknown"' 2>/dev/null || echo "unknown")
-
-    local health_status
-    health_status=$(echo "$inspect_json" | jq -r '.[0].State.Health.Status // "none"' 2>/dev/null || echo "none")
-
-    if [[ "$health_status" == "healthy" ]]; then
+    if echo "$ps_output" | grep -q "(healthy)"; then
       return 0
-    fi
-
-    # For migrate service, check if it exited successfully
-    if [[ "$service_name" == "migrate" ]]; then
-      local exit_code
-      exit_code=$(echo "$inspect_json" | jq -r '.[0].State.ExitCode // -1' 2>/dev/null || echo "-1")
-
-      if [[ "$state" == "exited" && "$exit_code" == "0" ]]; then
-        return 0
-      elif [[ "$state" == "exited" && "$exit_code" != "0" ]]; then
-        log_error "Migration service exited with code $exit_code"
-        docker compose -f "$COMPOSE_FILE" logs migrate 2>&1 | tail -50
-        return 1
-      fi
     fi
 
     sleep 2
