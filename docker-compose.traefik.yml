@@ -236,16 +236,10 @@ services:
       retries: 10
       start_period: 10s
     # Container hardening
+    # Note: PostgreSQL requires more capabilities than other services for initialization
+    # We keep no-new-privileges but don't drop all capabilities
     security_opt:
       - no-new-privileges:true
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - DAC_OVERRIDE
-      - FOWNER
-      - SETGID
-      - SETUID
     deploy:
       resources:
         limits:
