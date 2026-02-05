@@ -75,7 +75,9 @@ import {
   INSERT_TABLE_COMMAND,
 } from '@lexical/table';
 import { TablePlugin } from '@lexical/react/LexicalTablePlugin';
-import mermaid from 'mermaid';
+// Mermaid is loaded dynamically to reduce initial bundle size (~1MB).
+// See #685 for rationale: most users don't use diagrams, so we lazy load.
+import type mermaidType from 'mermaid';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import hljs from 'highlight.js/lib/core';
@@ -112,13 +114,31 @@ hljs.registerLanguage('html', xml);
 hljs.registerLanguage('xml', xml);
 hljs.registerLanguage('css', css);
 
-// Initialize Mermaid for diagram rendering
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'default',
-  securityLevel: 'strict', // Prevent XSS
-  fontFamily: 'inherit',
-});
+/**
+ * Lazy-loaded Mermaid instance.
+ * Mermaid.js is ~1MB and includes D3.js and many sub-dependencies.
+ * Most users don't use diagrams, so we lazy load it only when needed (#685).
+ * The promise is cached so subsequent calls return the same instance.
+ */
+let mermaidPromise: Promise<typeof mermaidType> | null = null;
+let mermaidInitialized = false;
+
+async function getMermaid(): Promise<typeof mermaidType> {
+  if (!mermaidPromise) {
+    mermaidPromise = import('mermaid').then((m) => m.default);
+  }
+  const mermaid = await mermaidPromise;
+  if (!mermaidInitialized) {
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      securityLevel: 'strict', // Prevent XSS
+      fontFamily: 'inherit',
+    });
+    mermaidInitialized = true;
+  }
+  return mermaid;
+}
 
 import { cn } from '@/ui/lib/utils';
 import { Button } from '@/ui/components/ui/button';
@@ -852,6 +872,8 @@ function escapeHtml(text: string): string {
  * Component to render mermaid diagrams after the preview HTML is mounted.
  * Scans for elements with data-mermaid attribute and renders the diagrams.
  *
+ * Mermaid is lazy-loaded (~1MB) only when diagrams are detected (#685).
+ *
  * Security: Mermaid is configured with securityLevel: 'strict' which sanitizes
  * the SVG output. Error messages are escaped before display.
  */
@@ -863,67 +885,87 @@ function MermaidRenderer({ containerRef }: { containerRef: React.RefObject<HTMLD
     const mermaidElements = container.querySelectorAll('[data-mermaid]');
     if (mermaidElements.length === 0) return;
 
+    // Track if component is still mounted for async cleanup
+    let isMounted = true;
+
     // Render each mermaid diagram
-    mermaidElements.forEach(async (element, index) => {
-      const code = element.getAttribute('data-mermaid');
-      if (!code) return;
+    const renderDiagrams = async () => {
+      // Lazy load mermaid only when diagrams are present (#685)
+      const mermaid = await getMermaid();
 
-      // Decode HTML entities
-      const decodedCode = code
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"');
+      mermaidElements.forEach(async (element, index) => {
+        if (!isMounted) return;
 
-      try {
-        const id = `mermaid-diagram-${Date.now()}-${index}`;
-        // mermaid.render returns sanitized SVG when securityLevel: 'strict' is set
-        const { svg } = await mermaid.render(id, decodedCode);
+        const code = element.getAttribute('data-mermaid');
+        if (!code) return;
 
-        // Clear placeholder and insert SVG
-        while (element.firstChild) {
-          element.removeChild(element.firstChild);
+        // Decode HTML entities
+        const decodedCode = code
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"');
+
+        try {
+          const id = `mermaid-diagram-${Date.now()}-${index}`;
+          // mermaid.render returns sanitized SVG when securityLevel: 'strict' is set
+          const { svg } = await mermaid.render(id, decodedCode);
+
+          if (!isMounted) return;
+
+          // Clear placeholder and insert SVG
+          while (element.firstChild) {
+            element.removeChild(element.firstChild);
+          }
+          // Create a container for the SVG and set its content
+          // The SVG from mermaid.render is already sanitized with securityLevel: 'strict'
+          const svgContainer = document.createElement('div');
+          svgContainer.className = 'mermaid-svg-container';
+          // Using DOMParser to safely parse the SVG
+          const parser = new DOMParser();
+          const svgDoc = parser.parseFromString(svg, 'image/svg+xml');
+          const svgElement = svgDoc.documentElement;
+          if (svgElement && svgElement.nodeName === 'svg') {
+            svgContainer.appendChild(document.importNode(svgElement, true));
+          }
+          element.appendChild(svgContainer);
+          element.classList.add('mermaid-rendered');
+        } catch (error) {
+          if (!isMounted) return;
+
+          // Show error message in the placeholder (escaped for safety)
+          console.error('[MermaidRenderer]', error);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+          // Clear placeholder
+          while (element.firstChild) {
+            element.removeChild(element.firstChild);
+          }
+
+          // Create error display using DOM methods (not innerHTML)
+          const errorDiv = document.createElement('div');
+          errorDiv.className = 'bg-destructive/10 text-destructive p-4 rounded-md text-sm';
+
+          const strongEl = document.createElement('strong');
+          strongEl.textContent = 'Mermaid diagram error:';
+          errorDiv.appendChild(strongEl);
+
+          const preEl = document.createElement('pre');
+          preEl.className = 'mt-2 text-xs overflow-auto';
+          preEl.textContent = errorMessage;
+          errorDiv.appendChild(preEl);
+
+          element.appendChild(errorDiv);
+          element.classList.add('mermaid-error');
         }
-        // Create a container for the SVG and set its content
-        // The SVG from mermaid.render is already sanitized with securityLevel: 'strict'
-        const svgContainer = document.createElement('div');
-        svgContainer.className = 'mermaid-svg-container';
-        // Using DOMParser to safely parse the SVG
-        const parser = new DOMParser();
-        const svgDoc = parser.parseFromString(svg, 'image/svg+xml');
-        const svgElement = svgDoc.documentElement;
-        if (svgElement && svgElement.nodeName === 'svg') {
-          svgContainer.appendChild(document.importNode(svgElement, true));
-        }
-        element.appendChild(svgContainer);
-        element.classList.add('mermaid-rendered');
-      } catch (error) {
-        // Show error message in the placeholder (escaped for safety)
-        console.error('[MermaidRenderer]', error);
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      });
+    };
 
-        // Clear placeholder
-        while (element.firstChild) {
-          element.removeChild(element.firstChild);
-        }
+    renderDiagrams();
 
-        // Create error display using DOM methods (not innerHTML)
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'bg-destructive/10 text-destructive p-4 rounded-md text-sm';
-
-        const strongEl = document.createElement('strong');
-        strongEl.textContent = 'Mermaid diagram error:';
-        errorDiv.appendChild(strongEl);
-
-        const preEl = document.createElement('pre');
-        preEl.className = 'mt-2 text-xs overflow-auto';
-        preEl.textContent = errorMessage;
-        errorDiv.appendChild(preEl);
-
-        element.appendChild(errorDiv);
-        element.classList.add('mermaid-error');
-      }
-    });
+    return () => {
+      isMounted = false;
+    };
   }, [containerRef]);
 
   return null;
