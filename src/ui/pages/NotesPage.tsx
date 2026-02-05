@@ -81,6 +81,7 @@ import type {
   Note as UINote,
   Notebook as UINotebook,
 } from '@/ui/components/notes/types';
+import { DEFAULT_NOTEBOOK_COLOR } from '@/ui/lib/constants';
 
 /**
  * Transform API Note to UI Note type.
@@ -684,14 +685,14 @@ function NotebookFormDialog({
 }: NotebookFormDialogProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [color, setColor] = useState('#6366f1');
+  const [color, setColor] = useState(DEFAULT_NOTEBOOK_COLOR);
 
   // Reset form when dialog opens
   React.useEffect(() => {
     if (open) {
       setName(notebook?.name ?? '');
       setDescription(notebook?.description ?? '');
-      setColor(notebook?.color ?? '#6366f1');
+      setColor(notebook?.color ?? DEFAULT_NOTEBOOK_COLOR);
     }
   }, [open, notebook]);
 
