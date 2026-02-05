@@ -55,13 +55,13 @@ describe('SeaweedFS in docker-compose.yml (production compose)', () => {
     it('uses custom entrypoint for S3 authentication', () => {
       const entrypoint = compose.services.seaweedfs.entrypoint;
       const entrypointStr = Array.isArray(entrypoint) ? entrypoint.join(' ') : entrypoint;
-      expect(entrypointStr).toContain('/entrypoint.sh');
+      expect(entrypointStr).toContain('/docker-entrypoint-s3.sh');
     });
 
     it('mounts S3 config template and entrypoint script', () => {
       const volumes = compose.services.seaweedfs.volumes || [];
       const hasConfigTemplate = volumes.some((v: string) => v.includes('s3.json.template'));
-      const hasEntrypoint = volumes.some((v: string) => v.includes('entrypoint.sh'));
+      const hasEntrypoint = volumes.some((v: string) => v.includes('entrypoint.sh') && v.includes('docker-entrypoint-s3.sh'));
       expect(hasConfigTemplate).toBe(true);
       expect(hasEntrypoint).toBe(true);
     });

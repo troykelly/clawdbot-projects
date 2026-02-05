@@ -1,9 +1,9 @@
 #!/bin/sh
 set -eu
 
-# SeaweedFS entrypoint script for S3 authentication
+# SeaweedFS S3 authentication entrypoint wrapper
 # Generates S3 config from environment variables using shell substitution
-# then starts SeaweedFS with the generated config
+# then delegates to the original SeaweedFS entrypoint
 
 # Configuration paths
 TEMPLATE_FILE="/etc/seaweedfs/s3.json.template"
@@ -55,18 +55,22 @@ generate_config() {
 
 # Main execution
 main() {
-    echo "SeaweedFS entrypoint: Validating environment..."
+    echo "SeaweedFS S3 auth wrapper: Validating environment..."
     validate_env
 
-    echo "SeaweedFS entrypoint: Generating S3 configuration..."
+    echo "SeaweedFS S3 auth wrapper: Generating S3 configuration..."
     generate_config
 
-    echo "SeaweedFS entrypoint: Starting SeaweedFS..."
-    exec weed server -s3 -s3.port=8333 -s3.config="${OUTPUT_FILE}" \
+    echo "SeaweedFS S3 auth wrapper: Delegating to original entrypoint..."
+    # Call the original SeaweedFS entrypoint with our server arguments
+    # The original entrypoint handles permissions and user switching
+    exec /entrypoint.sh server \
+        -s3 \
+        -s3.port=8333 \
+        -s3.config="${OUTPUT_FILE}" \
         -ip.bind=0.0.0.0 \
         -master.volumeSizeLimitMB="${SEAWEEDFS_VOLUME_SIZE_LIMIT_MB:-1000}" \
-        -volume.max="${SEAWEEDFS_VOLUME_MAX:-10}" \
-        -dir=/data
+        -volume.max="${SEAWEEDFS_VOLUME_MAX:-10}"
 }
 
 main "$@"
