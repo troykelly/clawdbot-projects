@@ -844,7 +844,7 @@ function NoteHistoryPanel({ noteId, onClose }: NoteHistoryPanelProps) {
       <div className="flex-1 p-6">
         <div className="flex items-center justify-between mb-4">
           <Skeleton width={200} height={24} />
-          <Button variant="ghost" size="icon" onClick={onClose}>
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close version history">
             <X className="size-4" />
           </Button>
         </div>
@@ -858,7 +858,7 @@ function NoteHistoryPanel({ noteId, onClose }: NoteHistoryPanelProps) {
       <div className="flex-1 p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Version History</h2>
-          <Button variant="ghost" size="icon" onClick={onClose}>
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close version history">
             <X className="size-4" />
           </Button>
         </div>
@@ -887,7 +887,7 @@ function NoteHistoryPanel({ noteId, onClose }: NoteHistoryPanelProps) {
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex items-center justify-between p-4 border-b">
         <h2 className="text-lg font-semibold">Version History</h2>
-        <Button variant="ghost" size="icon" onClick={onClose}>
+        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close version history">
           <X className="size-4" />
         </Button>
       </div>
