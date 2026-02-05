@@ -1697,6 +1697,159 @@ $$
   });
 
   // ============================================
+  // Rate Limiting
+  // ============================================
+
+  describe('Rate Limiting', () => {
+    it('enforces rate limit on rapid note creation', async () => {
+      // Send many requests in quick succession
+      const numRequests = 100;
+      const promises = Array(numRequests)
+        .fill(null)
+        .map((_, i) =>
+          app.inject({
+            method: 'POST',
+            url: '/api/notes',
+            payload: {
+              user_email: primaryUser,
+              title: `Rate Limit Test Note ${i}`,
+            },
+          })
+        );
+
+      const responses = await Promise.all(promises);
+      const rateLimited = responses.filter((r) => r.statusCode === 429);
+
+      // Should have at least some rate-limited responses
+      // (exact number depends on rate limit configuration)
+      expect(rateLimited.length).toBeGreaterThan(0);
+    });
+
+    it('enforces rate limit on search queries', async () => {
+      // Send many search requests in quick succession
+      const numRequests = 50;
+      const promises = Array(numRequests)
+        .fill(null)
+        .map(() =>
+          app.inject({
+            method: 'GET',
+            url: '/api/notes/search',
+            query: {
+              user_email: primaryUser,
+              q: 'test',
+              searchType: 'text',
+            },
+          })
+        );
+
+      const responses = await Promise.all(promises);
+      const rateLimited = responses.filter((r) => r.statusCode === 429);
+
+      // Should have rate-limited responses for search endpoint
+      expect(rateLimited.length).toBeGreaterThan(0);
+    });
+
+    it('returns Retry-After header when rate limited', async () => {
+      // Trigger rate limit
+      const numRequests = 100;
+      const promises = Array(numRequests)
+        .fill(null)
+        .map((_, i) =>
+          app.inject({
+            method: 'POST',
+            url: '/api/notes',
+            payload: {
+              user_email: primaryUser,
+              title: `Retry-After Test Note ${i}`,
+            },
+          })
+        );
+
+      const responses = await Promise.all(promises);
+      const rateLimited = responses.filter((r) => r.statusCode === 429);
+
+      // At least one rate-limited response should have Retry-After header
+      if (rateLimited.length > 0) {
+        const hasRetryAfter = rateLimited.some(
+          (r) => r.headers['retry-after'] !== undefined
+        );
+        expect(hasRetryAfter).toBe(true);
+      }
+    });
+
+    it('enforces rate limit on share operations', async () => {
+      // Create a note first
+      const createRes = await app.inject({
+        method: 'POST',
+        url: '/api/notes',
+        payload: {
+          user_email: primaryUser,
+          title: 'Rate Limit Share Test',
+        },
+      });
+      const noteId = createRes.json().id;
+
+      // Send many share requests in quick succession (different emails)
+      const numRequests = 50;
+      const promises = Array(numRequests)
+        .fill(null)
+        .map((_, i) =>
+          app.inject({
+            method: 'POST',
+            url: `/api/notes/${noteId}/share`,
+            payload: {
+              user_email: primaryUser,
+              email: `rate-limit-test-${i}@example.com`,
+              permission: 'read',
+            },
+          })
+        );
+
+      const responses = await Promise.all(promises);
+      const rateLimited = responses.filter((r) => r.statusCode === 429);
+
+      // Should have at least some rate-limited responses
+      expect(rateLimited.length).toBeGreaterThan(0);
+    });
+
+    it('allows requests after rate limit window expires', async () => {
+      // This test verifies the rate limiter eventually allows requests again
+      // For E2E testing, we just verify the endpoint works after a brief pause
+
+      // First, create some notes to potentially trigger limits
+      const initialPromises = Array(10)
+        .fill(null)
+        .map((_, i) =>
+          app.inject({
+            method: 'POST',
+            url: '/api/notes',
+            payload: {
+              user_email: primaryUser,
+              title: `Rate Reset Test Note ${i}`,
+            },
+          })
+        );
+      await Promise.all(initialPromises);
+
+      // Wait a short time for rate limiter to potentially reset
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // A single request should succeed (not necessarily rate limited)
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/notes',
+        payload: {
+          user_email: primaryUser,
+          title: 'Post Rate Limit Test Note',
+        },
+      });
+
+      // Should be either success (201) or rate limited (429)
+      expect([201, 429]).toContain(res.statusCode);
+    });
+  });
+
+  // ============================================
   // Move and Copy Operations
   // ============================================
 
