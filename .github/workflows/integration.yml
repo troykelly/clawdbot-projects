@@ -96,8 +96,10 @@ jobs:
           sleep 15
           echo "=== Container status after 15s ==="
           docker compose ps -a
-          echo "=== Container logs ==="
+          echo "=== DB Container logs ==="
           docker compose logs db --tail=100
+          echo "=== SeaweedFS Container logs ==="
+          docker compose logs seaweedfs --tail=100
           echo "=== Stopping test containers ==="
           docker compose down -v
           echo "=== End debug ==="
