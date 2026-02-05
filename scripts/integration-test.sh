@@ -135,10 +135,18 @@ log_info "Timeout: ${TIMEOUT}s"
 log_info "Starting compose stack..."
 
 # Pull images first (speeds up subsequent runs)
-docker compose -f "$COMPOSE_FILE" pull --quiet 2>/dev/null || log_warn "Pull failed, using cached images"
+# If pull fails (e.g., images not published yet for PR branch), build locally
+if ! docker compose -f "$COMPOSE_FILE" pull 2>&1 | tee /tmp/pull.log; then
+  if grep -q "manifest unknown" /tmp/pull.log; then
+    log_warn "Published images not available, building locally..."
+    docker compose -f "$COMPOSE_FILE" build
+  else
+    log_warn "Pull failed, will try to use cached images"
+  fi
+fi
 
-# Start the stack
-docker compose -f "$COMPOSE_FILE" up -d
+# Start the stack (--no-build since we already handled image availability above)
+docker compose -f "$COMPOSE_FILE" up -d --no-build
 
 log_success "Compose stack started"
 
