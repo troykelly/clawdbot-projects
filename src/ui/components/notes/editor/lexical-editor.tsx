@@ -77,6 +77,18 @@ import {
 import { TablePlugin } from '@lexical/react/LexicalTablePlugin';
 import mermaid from 'mermaid';
 import katex from 'katex';
+/**
+ * KaTeX CSS (~25KB) is loaded globally when the editor component is first imported.
+ * This is an acceptable trade-off for the following reasons (#687):
+ *
+ * 1. The editor component is only loaded on notes pages (route-level code splitting)
+ * 2. Lazy loading CSS would cause layout shifts/FOUC when math content renders
+ * 3. The size is small compared to other dependencies (e.g., Mermaid ~1MB)
+ * 4. KaTeX styles are namespaced with .katex prefix, minimizing global CSS conflicts
+ *
+ * Alternative considered: Dynamic CSS injection when math is detected, but this
+ * would cause visible layout shifts as equations re-render after styles load.
+ */
 import 'katex/dist/katex.min.css';
 import hljs from 'highlight.js/lib/core';
 // Import common languages for syntax highlighting
