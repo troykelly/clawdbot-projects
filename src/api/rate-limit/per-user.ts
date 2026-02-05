@@ -9,7 +9,7 @@
 import type { FastifyRequest } from 'fastify';
 
 /** Rate limit categories for different endpoint types */
-export type RateLimitCategory = 'read' | 'write' | 'search' | 'send' | 'admin' | 'webhook';
+export type RateLimitCategory = 'read' | 'write' | 'search' | 'send' | 'admin' | 'webhook' | 'cursor';
 
 /** Rate limit configuration */
 export interface RateLimitConfig {
@@ -27,6 +27,7 @@ const DEFAULT_LIMITS: Record<RateLimitCategory, number> = {
   send: 10,
   admin: 5,
   webhook: 60, // Higher limit for external service webhooks
+  cursor: 120, // Higher limit for real-time cursor updates (#690)
 };
 
 /** Environment variable names for category overrides */
@@ -37,6 +38,7 @@ const ENV_OVERRIDE_KEYS: Record<RateLimitCategory, string> = {
   send: 'RATE_LIMIT_SEND_MAX',
   admin: 'RATE_LIMIT_ADMIN_MAX',
   webhook: 'RATE_LIMIT_WEBHOOK_MAX',
+  cursor: 'RATE_LIMIT_CURSOR_MAX', // (#690)
 };
 
 /**
@@ -86,6 +88,11 @@ export function getEndpointRateLimitCategory(method: string, url: string): RateL
   // Admin endpoints
   if (path.includes('/admin/')) {
     return 'admin';
+  }
+
+  // Cursor update endpoints - high frequency real-time updates (#690)
+  if (path.includes('/presence/cursor')) {
+    return 'cursor';
   }
 
   // Webhook endpoints (external services calling our API)
