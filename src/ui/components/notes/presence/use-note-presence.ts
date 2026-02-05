@@ -141,8 +141,12 @@ export function useNotePresence({
       hasJoinedRef.current = false;
       setIsConnected(false);
     } catch (err) {
-      // Don't throw on leave errors, just log
-      console.error('[NotePresence] Error leaving:', err);
+      // Don't throw on leave errors - leaving is a best-effort operation
+      // Log in development only to avoid information leakage in production
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.error('[NotePresence] Error leaving:', err);
+      }
     }
   }, [noteId, userEmail, apiUrl]);
 
@@ -161,8 +165,12 @@ export function useNotePresence({
         }
       );
     } catch (err) {
-      // Don't throw on cursor update errors, just log
-      console.error('[NotePresence] Error updating cursor:', err);
+      // Don't throw on cursor update errors - cursor updates are non-critical
+      // Log in development only to avoid information leakage in production
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.error('[NotePresence] Error updating cursor:', err);
+      }
     }
   }, [noteId, userEmail, apiUrl]);
 
