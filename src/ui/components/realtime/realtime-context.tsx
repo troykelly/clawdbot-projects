@@ -32,6 +32,15 @@ export function useRealtime(): RealtimeContextValue {
   return context;
 }
 
+/**
+ * Optional version of useRealtime that returns null when not inside a provider.
+ * Use this when realtime functionality is optional and you need a graceful fallback.
+ * (#692: Fixes Rules of Hooks violation - hooks must be called unconditionally)
+ */
+export function useRealtimeOptional(): RealtimeContextValue | null {
+  return React.useContext(RealtimeContext);
+}
+
 interface EventHandler {
   eventType: RealtimeEventType;
   handler: (event: RealtimeEvent) => void;
