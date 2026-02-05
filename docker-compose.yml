@@ -77,10 +77,16 @@ services:
       retries: 20
       start_period: 30s
     # Container hardening
+    # Note: SeaweedFS entrypoint needs CHOWN for /data ownership and
+    # SETGID/SETUID for su-exec user switching
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
     deploy:
       resources:
         limits:
