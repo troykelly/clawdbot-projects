@@ -246,6 +246,37 @@ export function useNotePresence({
   }, [realtimeContext, handlePresenceEvent]);
 
   /**
+   * Re-join presence after WebSocket reconnection.
+   * Issue #699: When the WebSocket disconnects and reconnects, we need to
+   * re-announce our presence to get an updated viewer list.
+   */
+  const previousStatusRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!realtimeContext) return;
+
+    const currentStatus = realtimeContext.status;
+    const previousStatus = previousStatusRef.current;
+
+    // If we just reconnected (status changed to 'connected' from something else)
+    // and we were previously joined, re-join to refresh presence
+    if (
+      currentStatus === 'connected' &&
+      previousStatus !== null &&
+      previousStatus !== 'connected' &&
+      hasJoinedRef.current
+    ) {
+      // Reset joined state to allow re-joining
+      hasJoinedRef.current = false;
+      // Re-join presence
+      join().catch(() => {
+        // Error already handled in join()
+      });
+    }
+
+    previousStatusRef.current = currentStatus;
+  }, [realtimeContext?.status, join]);
+
+  /**
    * Auto-join on mount, leave on unmount
    * Note: leave() is async but called fire-and-forget in cleanup, which is acceptable
    * for cleanup functions. We track mounted state to prevent state updates after unmount. (#696)
