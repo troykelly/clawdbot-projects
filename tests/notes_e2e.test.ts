@@ -56,7 +56,8 @@ describe('Notes E2E Integration (Epic #338, Issue #627)', () => {
       payload: { email },
     });
 
-    if (request.statusCode !== 200) {
+    // Auth endpoint returns 200 (OK) or 201 (Created) depending on implementation
+    if (request.statusCode !== 200 && request.statusCode !== 201) {
       throw new Error(
         `Auth request failed for ${email}: status ${request.statusCode}, body: ${request.body}`
       );
