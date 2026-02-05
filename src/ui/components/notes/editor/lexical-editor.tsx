@@ -141,8 +141,6 @@ import {
   Save,
   Loader2,
   Code,
-  Copy,
-  Check,
   FileCode,
   Table,
 } from 'lucide-react';
