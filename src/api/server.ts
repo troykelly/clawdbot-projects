@@ -59,6 +59,7 @@ import {
   InvalidStateError,
   type OAuthProvider,
 } from './oauth/index.ts';
+import { isValidUUID } from './utils/validation.ts';
 
 export type ProjectsApiOptions = {
   logger?: boolean;
@@ -3332,6 +3333,12 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
     }
 
     const params = req.params as { id: string };
+
+    // Validate file ID is a valid UUID (Issue #613)
+    if (!isValidUUID(params.id)) {
+      return reply.code(400).send({ error: 'Invalid file ID format' });
+    }
+
     const body = req.body as { expiresIn?: number; maxDownloads?: number } | null;
     const expiresIn = body?.expiresIn ?? 3600;
     const maxDownloads = body?.maxDownloads;
