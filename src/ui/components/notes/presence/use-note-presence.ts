@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRealtime } from '@/ui/components/realtime/realtime-context';
+import { useRealtimeOptional } from '@/ui/components/realtime/realtime-context';
 import type { RealtimeEvent } from '@/ui/components/realtime/types';
 
 /**
@@ -88,13 +88,8 @@ export function useNotePresence({
   const [isConnected, setIsConnected] = useState(false);
   const hasJoinedRef = useRef(false);
 
-  // Try to use realtime context, but gracefully degrade if not available
-  let realtimeContext: ReturnType<typeof useRealtime> | null = null;
-  try {
-    realtimeContext = useRealtime();
-  } catch {
-    // Realtime context not available, will use polling fallback
-  }
+  // Use optional realtime hook - returns null when not inside RealtimeProvider (#692)
+  const realtimeContext = useRealtimeOptional();
 
   /**
    * Join note presence via API
