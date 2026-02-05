@@ -41,8 +41,6 @@ import {
   CodeHighlightNode,
   registerCodeHighlighting,
   $createCodeNode,
-  CODE_LANGUAGE_FRIENDLY_NAME_MAP,
-  getLanguageFriendlyName,
 } from '@lexical/code';
 import {
   $getSelection,
@@ -59,19 +57,10 @@ import {
 import { $setBlocksType } from '@lexical/selection';
 import { $createHeadingNode, $createQuoteNode } from '@lexical/rich-text';
 import { TOGGLE_LINK_COMMAND } from '@lexical/link';
-import { $getNodeByKey } from 'lexical';
 import {
   TableNode,
   TableRowNode,
   TableCellNode,
-  $createTableNodeWithDimensions,
-  $insertTableColumn,
-  $insertTableRow,
-  $deleteTableColumn,
-  $deleteTableRowAtIndex,
-  $getTableColumnIndexFromTableCellNode,
-  $getTableRowIndexFromTableCellNode,
-  registerTablePlugin,
   INSERT_TABLE_COMMAND,
 } from '@lexical/table';
 import { TablePlugin } from '@lexical/react/LexicalTablePlugin';
