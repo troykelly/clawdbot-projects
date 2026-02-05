@@ -1,0 +1,529 @@
+# Full-fat docker-compose with OpenClaw gateway (Issue #583)
+#
+# Extends the Traefik configuration to include the OpenClaw gateway.
+# This provides a complete self-hosted deployment with:
+#   - All services from docker-compose.traefik.yml
+#   - OpenClaw gateway with dashboard, websocket, and webhook endpoints
+#
+# Architecture:
+#   Internet
+#      |
+#      v
+#   Traefik (:443)
+#      |
+#      +-- DOMAIN/          --> app (frontend)
+#      +-- api.DOMAIN/      --> modsecurity --> api (API server)
+#      +-- DOMAIN/openclaw/ --> openclaw-gateway (dashboard/debug UI)
+#      +-- ws.DOMAIN/       --> openclaw-gateway (websocket for agents)
+#      +-- hooks.DOMAIN/    --> openclaw-gateway (webhook receiver)
+#
+# Usage:
+#   cp .env.example .env
+#   # Edit .env and set:
+#   #   - Core settings (POSTGRES_PASSWORD, COOKIE_SECRET, S3_SECRET_KEY)
+#   #   - Domain settings (DOMAIN, ACME_EMAIL, CF_DNS_API_TOKEN)
+#   #   - OpenClaw settings (OPENCLAW_GATEWAY_TOKEN, model provider keys)
+#   docker compose -f docker-compose.full.yml up -d
+#
+# Required environment variables (in addition to docker-compose.traefik.yml):
+#   - OPENCLAW_GATEWAY_TOKEN: Token for authenticating with OpenClaw gateway
+#   - Model provider credentials (at least one): OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.
+#
+# See .env.example for full configuration options
+
+name: openclaw-projects
+
+services:
+  # =============================================================================
+  # Include all services from Traefik compose
+  # =============================================================================
+  # Note: This file uses YAML anchors and extends where possible, but Docker
+  # Compose doesn't support true inheritance. Services are duplicated with
+  # modifications for the OpenClaw gateway integration.
+
+  # =============================================================================
+  # Traefik Reverse Proxy (extended for OpenClaw routes)
+  # =============================================================================
+  traefik:
+    image: traefik:3.6
+    container_name: openclaw-traefik
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN is required}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+      TRUSTED_IPS: ${TRUSTED_IPS:-}
+      DISABLE_HTTP: ${DISABLE_HTTP:-false}
+      # DNS provider credentials
+      CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN:-}
+      CF_API_KEY: ${CF_API_KEY:-}
+      CF_API_EMAIL: ${CF_API_EMAIL:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_HOSTED_ZONE_ID: ${AWS_HOSTED_ZONE_ID:-}
+      AWS_REGION: ${AWS_REGION:-}
+    command:
+      - --api.dashboard=false
+      - --api.insecure=false
+      - --providers.docker=true
+      - --providers.docker.exposedByDefault=false
+      - --providers.docker.network=openclaw-projects_default
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      - --entrypoints.web.address=:${HTTP_PORT:-80}
+      - --entrypoints.web.http.redirections.entryPoint.to=websecure
+      - --entrypoints.web.http.redirections.entryPoint.scheme=https
+      - --entrypoints.web.http.redirections.entryPoint.permanent=true
+      - --entrypoints.websecure.address=:${HTTPS_PORT:-443}
+      - --entrypoints.websecure.http3=true
+      - --entrypoints.websecure.http.tls=true
+      - --entrypoints.websecure.http.tls.certResolver=letsencrypt
+      - --entrypoints.websecure.http.tls.options=default@file
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?ACME_EMAIL is required}
+      - --certificatesresolvers.letsencrypt.acme.storage=/etc/traefik/acme/acme.json
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge=true
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge.provider=${ACME_DNS_PROVIDER:-cloudflare}
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge.delaybeforecheck=30
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge.disablepropagationcheck=true
+      - --log.level=${TRAEFIK_LOG_LEVEL:-INFO}
+      - --accesslog=true
+      - --accesslog.format=json
+    ports:
+      - "${HTTP_PORT:-80}:${HTTP_PORT:-80}"
+      - "${HTTPS_PORT:-443}:${HTTPS_PORT:-443}/tcp"
+      - "${HTTPS_PORT:-443}:${HTTPS_PORT:-443}/udp"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./docker/traefik/dynamic-config.yml.template:/etc/traefik/templates/dynamic-config.yml.template:ro
+      - traefik_dynamic:/etc/traefik/dynamic
+      - traefik_acme:/etc/traefik/acme
+    entrypoint: ["/entrypoint.sh"]
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=16M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+    configs:
+      - source: traefik_entrypoint
+        target: /entrypoint.sh
+        mode: 0755
+
+  # =============================================================================
+  # ModSecurity WAF (unchanged from Traefik compose)
+  # =============================================================================
+  modsecurity:
+    image: owasp/modsecurity-crs:apache-alpine
+    container_name: openclaw-modsecurity
+    restart: unless-stopped
+    environment:
+      MODSEC_RULE_ENGINE: ${MODSEC_ENABLED:-true}
+      PARANOIA: ${MODSEC_PARANOIA_LEVEL:-1}
+      ANOMALY_INBOUND: ${MODSEC_ANOMALY_INBOUND:-5}
+      ANOMALY_OUTBOUND: ${MODSEC_ANOMALY_OUTBOUND:-4}
+      BACKEND: http://api:3001
+      PROXY_TIMEOUT: 60
+      MODSEC_REQ_BODY_ACCESS: "On"
+      MODSEC_REQ_BODY_LIMIT: 13107200
+      MODSEC_REQ_BODY_NOFILES_LIMIT: 131072
+      MODSEC_RESP_BODY_ACCESS: "On"
+      MODSEC_RESP_BODY_LIMIT: 1048576
+      MODSEC_AUDIT_LOG: "/dev/stdout"
+      MODSEC_AUDIT_LOG_FORMAT: JSON
+      MODSEC_AUDIT_LOG_TYPE: Serial
+      MODSEC_AUDIT_ENGINE: RelevantOnly
+      ERRORLOG: "/dev/stderr"
+      PORT: 8080
+      SERVER_NAME: modsecurity
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+      - /var/log/apache2:mode=1777,size=32M
+      - /var/run/apache2:mode=1777,size=8M
+      - /var/lock/apache2:mode=1777,size=8M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          cpus: "0.1"
+          memory: 128M
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.modsecurity.loadbalancer.server.port=8080"
+      - "traefik.http.services.modsecurity.loadbalancer.healthcheck.path=/healthz"
+      - "traefik.http.services.modsecurity.loadbalancer.healthcheck.interval=10s"
+
+  # =============================================================================
+  # Database (unchanged from Traefik compose)
+  # =============================================================================
+  db:
+    image: ghcr.io/troykelly/openclaw-projects-db:latest
+    container_name: openclaw-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-openclaw}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-openclaw}
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=timescaledb,pg_cron
+      - -c
+      - cron.database_name=${POSTGRES_DB:-openclaw}
+    volumes:
+      - db_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-openclaw} -d $${POSTGRES_DB:-openclaw}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    shm_size: 256mb
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+  # =============================================================================
+  # SeaweedFS (unchanged from Traefik compose)
+  # =============================================================================
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    container_name: openclaw-seaweedfs
+    restart: unless-stopped
+    entrypoint: ["/docker-entrypoint-s3.sh"]
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-openclaw}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?S3_SECRET_KEY is required}
+      SEAWEEDFS_VOLUME_SIZE_LIMIT_MB: ${SEAWEEDFS_VOLUME_SIZE_LIMIT_MB:-30000}
+      SEAWEEDFS_VOLUME_MAX: ${SEAWEEDFS_VOLUME_MAX:-100}
+    volumes:
+      - seaweedfs_data:/data
+      - ./docker/seaweedfs/s3.json.template:/etc/seaweedfs/s3.json.template:ro
+      - ./docker/seaweedfs/entrypoint.sh:/docker-entrypoint-s3.sh:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9333/cluster/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  # =============================================================================
+  # Database Migrations (unchanged from Traefik compose)
+  # =============================================================================
+  migrate:
+    image: ghcr.io/troykelly/openclaw-projects-migrate:latest
+    container_name: openclaw-migrate
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-openclaw}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-openclaw}?sslmode=disable
+    command:
+      - -path
+      - /migrations
+      - -database
+      - postgresql://${POSTGRES_USER:-openclaw}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-openclaw}?sslmode=disable
+      - up
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # =============================================================================
+  # API Server (unchanged from Traefik compose)
+  # =============================================================================
+  api:
+    image: ghcr.io/troykelly/openclaw-projects-api:latest
+    container_name: openclaw-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3001
+      PUBLIC_BASE_URL: https://api.${DOMAIN:?DOMAIN is required}
+      COOKIE_SECRET: ${COOKIE_SECRET:?COOKIE_SECRET is required}
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-openclaw}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGDATABASE: ${POSTGRES_DB:-openclaw}
+      S3_ENDPOINT: http://seaweedfs:8333
+      S3_BUCKET: ${S3_BUCKET:-openclaw}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-openclaw}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?S3_SECRET_KEY is required}
+      S3_FORCE_PATH_STYLE: "true"
+      POSTMARK_FROM: ${POSTMARK_FROM:-}
+      POSTMARK_REPLY_TO: ${POSTMARK_REPLY_TO:-}
+      POSTMARK_MESSAGE_STREAM: ${POSTMARK_MESSAGE_STREAM:-outbound}
+      POSTMARK_TRANSACTIONAL_TOKEN: ${POSTMARK_TRANSACTIONAL_TOKEN:-}
+      OPENCLAW_PROJECTS_AUTH_SECRET: ${OPENCLAW_PROJECTS_AUTH_SECRET:-}
+      OPENCLAW_PROJECTS_AUTH_SECRET_FILE: ${OPENCLAW_PROJECTS_AUTH_SECRET_FILE:-}
+      OPENCLAW_PROJECTS_AUTH_SECRET_COMMAND: ${OPENCLAW_PROJECTS_AUTH_SECRET_COMMAND:-}
+      OPENCLAW_PROJECTS_AUTH_DISABLED: ${OPENCLAW_PROJECTS_AUTH_DISABLED:-false}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_API_KEY_FILE: ${OPENAI_API_KEY_FILE:-}
+      OPENAI_API_KEY_COMMAND: ${OPENAI_API_KEY_COMMAND:-}
+      VOYAGERAI_API_KEY: ${VOYAGERAI_API_KEY:-}
+      VOYAGERAI_API_KEY_FILE: ${VOYAGERAI_API_KEY_FILE:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_API_KEY_FILE: ${GEMINI_API_KEY_FILE:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      WEBHOOK_IP_WHITELIST_DISABLED: ${WEBHOOK_IP_WHITELIST_DISABLED:-false}
+      OPENCLAW_GATEWAY_URL: http://openclaw-gateway:18789
+      OPENCLAW_HOOK_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
+      MAX_FILE_SIZE_BYTES: ${MAX_FILE_SIZE_BYTES:-10485760}
+    expose:
+      - "3001"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    labels:
+      - "traefik.enable=false"
+
+  # =============================================================================
+  # Frontend App (unchanged from Traefik compose)
+  # =============================================================================
+  app:
+    image: ghcr.io/troykelly/openclaw-projects-app:latest
+    container_name: openclaw-app
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_HOST: api
+      API_PORT: "3001"
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+      - /var/cache/nginx:mode=1777,size=32M
+      - /var/run:mode=1777,size=8M
+      - /etc/nginx/conf.d:mode=1777,size=1M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.app.rule=Host(`${DOMAIN:?DOMAIN is required}`) || Host(`www.${DOMAIN:?DOMAIN is required}`)"
+      - "traefik.http.routers.app.entrypoints=websecure"
+      - "traefik.http.routers.app.tls=true"
+      - "traefik.http.routers.app.tls.certResolver=letsencrypt"
+      - "traefik.http.routers.app.tls.options=default@file"
+      - "traefik.http.routers.app.middlewares=security-headers@file,compress@file"
+      - "traefik.http.services.app.loadbalancer.server.port=8080"
+      - "traefik.http.services.app.loadbalancer.healthcheck.path=/"
+      - "traefik.http.services.app.loadbalancer.healthcheck.interval=10s"
+
+  # =============================================================================
+  # OpenClaw Gateway (AI Agent Gateway)
+  # =============================================================================
+  # The OpenClaw gateway manages AI agent sessions, routes messages from
+  # connected channels (WhatsApp, Telegram, Discord, etc.), executes tools,
+  # and maintains persistent memory.
+  #
+  # Endpoints exposed via Traefik:
+  #   - https://DOMAIN/openclaw/        -> Dashboard/debug UI
+  #   - wss://ws.DOMAIN/                -> WebSocket for agent connections
+  #   - https://hooks.DOMAIN/           -> Webhook receiver for channels
+  #
+  # The openclaw-projects plugin is automatically configured to connect to
+  # the API server using the shared OPENCLAW_PROJECTS_AUTH_SECRET.
+  openclaw-gateway:
+    # Use the pre-built OpenClaw image. Alternative: build locally with openclaw:local
+    # See https://docs.openclaw.ai/install/docker for build instructions
+    image: ${OPENCLAW_IMAGE:-ghcr.io/phioranex/openclaw-docker:latest}
+    container_name: openclaw-gateway
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      # Gateway configuration
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?OPENCLAW_GATEWAY_TOKEN is required}
+      OPENCLAW_BIND: "0.0.0.0"
+      OPENCLAW_HOME: /home/node/.openclaw
+      # Model provider credentials (at least one required)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
+      # Default model (optional)
+      OPENCLAW_DEFAULT_MODEL: ${OPENCLAW_DEFAULT_MODEL:-}
+      # Plugin configuration for openclaw-projects
+      # The plugin connects to the API server for task/memory management
+      OPENCLAW_PROJECTS_API_URL: http://api:3001
+      OPENCLAW_PROJECTS_AUTH_SECRET: ${OPENCLAW_PROJECTS_AUTH_SECRET:-}
+      # Channel credentials (optional - configure as needed)
+      # Telegram
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      # Discord
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      DISCORD_APPLICATION_ID: ${DISCORD_APPLICATION_ID:-}
+      # WhatsApp (via Twilio)
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER:-}
+      # Slack
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN:-}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
+    volumes:
+      # Persistent storage for agent sessions and workspace
+      - openclaw_data:/home/node/.openclaw
+    expose:
+      - "18789"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:18789/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    # Container hardening
+    # Note: OpenClaw runs as non-root user (node, uid 1000)
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    labels:
+      - "traefik.enable=true"
+      # Router for Dashboard/Debug UI at /openclaw path
+      - "traefik.http.routers.openclaw-ui.rule=Host(`${DOMAIN:?DOMAIN is required}`) && PathPrefix(`/openclaw`)"
+      - "traefik.http.routers.openclaw-ui.entrypoints=websecure"
+      - "traefik.http.routers.openclaw-ui.tls=true"
+      - "traefik.http.routers.openclaw-ui.tls.certResolver=letsencrypt"
+      - "traefik.http.routers.openclaw-ui.middlewares=security-headers@file"
+      # Router for WebSocket connections at ws.DOMAIN
+      - "traefik.http.routers.openclaw-ws.rule=Host(`ws.${DOMAIN:?DOMAIN is required}`)"
+      - "traefik.http.routers.openclaw-ws.entrypoints=websecure"
+      - "traefik.http.routers.openclaw-ws.tls=true"
+      - "traefik.http.routers.openclaw-ws.tls.certResolver=letsencrypt"
+      # Router for Webhook receiver at hooks.DOMAIN
+      - "traefik.http.routers.openclaw-hooks.rule=Host(`hooks.${DOMAIN:?DOMAIN is required}`)"
+      - "traefik.http.routers.openclaw-hooks.entrypoints=websecure"
+      - "traefik.http.routers.openclaw-hooks.tls=true"
+      - "traefik.http.routers.openclaw-hooks.tls.certResolver=letsencrypt"
+      # Service configuration (all routers point to same backend)
+      - "traefik.http.services.openclaw-gateway.loadbalancer.server.port=18789"
+      - "traefik.http.services.openclaw-gateway.loadbalancer.healthcheck.path=/health"
+      - "traefik.http.services.openclaw-gateway.loadbalancer.healthcheck.interval=10s"
+
+volumes:
+  db_data:
+  seaweedfs_data:
+  traefik_acme:
+  traefik_dynamic:
+  openclaw_data:
+
+configs:
+  traefik_entrypoint:
+    file: ./docker/traefik/entrypoint.sh
