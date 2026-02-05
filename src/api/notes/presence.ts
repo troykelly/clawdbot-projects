@@ -149,6 +149,7 @@ export async function getActiveCollaborators(
   pool: Pool,
   noteId: string
 ): Promise<NotePresenceUser[]> {
+  // Use parameterized query for interval to avoid SQL interpolation (#688)
   const result = await pool.query(
     `SELECT
        nc.user_email as email,
@@ -156,9 +157,9 @@ export async function getActiveCollaborators(
        nc.cursor_position
      FROM note_collaborator nc
      WHERE nc.note_id = $1
-       AND nc.last_seen_at > NOW() - INTERVAL '${PRESENCE_TIMEOUT_MINUTES} minutes'
+       AND nc.last_seen_at > NOW() - make_interval(mins => $2)
      ORDER BY nc.last_seen_at DESC`,
-    [noteId]
+    [noteId, PRESENCE_TIMEOUT_MINUTES]
   );
 
   return result.rows.map((row) => ({
@@ -203,10 +204,12 @@ export async function getNotePresence(
  * Called periodically to remove users who haven't updated presence.
  */
 export async function cleanupStalePresence(pool: Pool): Promise<number> {
+  // Use parameterized query for interval to avoid SQL interpolation (#688)
   const result = await pool.query(
     `DELETE FROM note_collaborator
-     WHERE last_seen_at < NOW() - INTERVAL '${PRESENCE_TIMEOUT_MINUTES} minutes'
-     RETURNING note_id, user_email`
+     WHERE last_seen_at < NOW() - make_interval(mins => $1)
+     RETURNING note_id, user_email`,
+    [PRESENCE_TIMEOUT_MINUTES]
   );
 
   // Broadcast leave events for each removed user
