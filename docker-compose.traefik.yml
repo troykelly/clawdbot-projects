@@ -235,6 +235,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+    # PostgreSQL requires more shared memory than Docker's default 64MB
+    shm_size: 256mb
     # Container hardening
     # Note: PostgreSQL requires more capabilities than other services for initialization
     # We keep no-new-privileges but don't drop all capabilities
