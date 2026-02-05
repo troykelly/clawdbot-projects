@@ -2,14 +2,36 @@
  * File sharing service.
  * Part of Epic #574, Issue #584.
  *
- * Generates shareable download links for file attachments with time-limited
- * access via tokens. Uses database-backed tokens instead of S3 presigned URLs
- * to keep SeaweedFS internal while allowing external file access.
+ * Generates shareable download links for file attachments with time-limited access.
+ *
+ * Supports two modes controlled by FILE_SHARE_MODE environment variable:
+ * - "presigned" (default): Generate S3 presigned URLs pointing directly to storage.
+ *   Requires SeaweedFS to be externally accessible (e.g., via Traefik).
+ * - "proxy": Use database-backed tokens and proxy downloads through the API.
+ *   Keeps SeaweedFS internal but adds API load for file downloads.
  */
 
 import type { Pool } from 'pg';
 import type { FileStorage, FileAttachment } from './types.ts';
-import { getFileMetadata, FileNotFoundError } from './service.ts';
+import { getFileMetadata, getFileUrl, FileNotFoundError } from './service.ts';
+
+/**
+ * File share mode
+ * - presigned: Use S3 presigned URLs (default, requires external SeaweedFS access)
+ * - proxy: Use database tokens and proxy through API
+ */
+export type FileShareMode = 'presigned' | 'proxy';
+
+/**
+ * Get the configured file share mode from environment
+ */
+export function getFileShareMode(): FileShareMode {
+  const mode = process.env.FILE_SHARE_MODE?.toLowerCase();
+  if (mode === 'proxy') {
+    return 'proxy';
+  }
+  return 'presigned'; // default
+}
 
 /**
  * File share record
@@ -69,10 +91,15 @@ export class ShareLinkError extends Error {
 }
 
 /**
- * Create a shareable download link for a file
+ * Create a shareable download link for a file.
+ *
+ * The share mode is determined by FILE_SHARE_MODE environment variable:
+ * - "presigned" (default): Returns an S3 presigned URL pointing to storage
+ * - "proxy": Returns a token-based URL that proxies through the API
  */
 export async function createFileShare(
   pool: Pool,
+  storage: FileStorage,
   input: CreateFileShareInput
 ): Promise<FileShareResult> {
   // Default expiry is 1 hour
@@ -89,12 +116,37 @@ export async function createFileShare(
     throw new FileNotFoundError(input.fileId);
   }
 
+  const mode = getFileShareMode();
+  const expiresAt = new Date(Date.now() + expiresIn * 1000);
+
+  if (mode === 'presigned') {
+    // Option B: Generate S3 presigned URL pointing directly to storage
+    // This requires SeaweedFS to be externally accessible
+    const presignedUrl = await storage.getSignedUrl(metadata.storageKey, expiresIn);
+
+    // Replace internal S3 endpoint with external URL if configured
+    const externalEndpoint = process.env.S3_EXTERNAL_ENDPOINT;
+    let url = presignedUrl;
+    if (externalEndpoint) {
+      const internalEndpoint = process.env.S3_ENDPOINT ?? '';
+      url = presignedUrl.replace(internalEndpoint, externalEndpoint);
+    }
+
+    return {
+      shareToken: '', // No token for presigned URLs
+      url,
+      expiresAt,
+      expiresIn,
+      filename: metadata.originalFilename,
+      contentType: metadata.contentType,
+      sizeBytes: metadata.sizeBytes,
+    };
+  }
+
+  // Option A (proxy mode): Use database-backed tokens
   // Generate share token
   const tokenResult = await pool.query('SELECT generate_share_token() as token');
   const shareToken = tokenResult.rows[0].token as string;
-
-  // Calculate expiration
-  const expiresAt = new Date(Date.now() + expiresIn * 1000);
 
   // Insert share record
   await pool.query(

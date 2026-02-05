@@ -3348,7 +3348,7 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
     const email = await getSessionEmail(req);
 
     try {
-      const result = await createFileShare(pool, {
+      const result = await createFileShare(pool, storage, {
         fileId: params.id,
         expiresIn,
         maxDownloads,
