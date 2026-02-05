@@ -10,7 +10,8 @@ import type {
   Notebook,
   ListNotebooksParams,
   NotebookTreeNode,
-  SharedWithMeResponse,
+  NotebookSharesResponse,
+  NotebooksSharedWithMeResponse,
 } from '@/ui/lib/api-types.ts';
 
 /** Query key factory for notebooks. */
@@ -125,14 +126,14 @@ export function useNotebooksTree(includeNoteCounts = false) {
  * Fetch shares for a notebook.
  *
  * @param id - Notebook UUID
- * @returns TanStack Query result with shares
+ * @returns TanStack Query result with `NotebookSharesResponse`
  */
 export function useNotebookShares(id: string) {
   return useQuery({
     queryKey: notebookKeys.shares(id),
     queryFn: ({ signal }) =>
-      apiClient.get<{ notebookId: string; shares: unknown[] }>(
-        `/api/notebooks/${id}/shares`,
+      apiClient.get<NotebookSharesResponse>(
+        `/api/notebooks/${encodeURIComponent(id)}/shares`,
         { signal }
       ),
     enabled: !!id,
@@ -142,14 +143,15 @@ export function useNotebookShares(id: string) {
 /**
  * Fetch notebooks shared with the current user.
  *
- * @returns TanStack Query result with `SharedWithMeResponse`
+ * @returns TanStack Query result with `NotebooksSharedWithMeResponse`
  */
 export function useNotebooksSharedWithMe() {
   return useQuery({
     queryKey: notebookKeys.sharedWithMe(),
     queryFn: ({ signal }) =>
-      apiClient.get<SharedWithMeResponse>('/api/notebooks/shared-with-me', {
-        signal,
-      }),
+      apiClient.get<NotebooksSharedWithMeResponse>(
+        '/api/notebooks/shared-with-me',
+        { signal }
+      ),
   });
 }
