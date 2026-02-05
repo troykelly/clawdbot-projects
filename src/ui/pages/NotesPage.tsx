@@ -895,9 +895,13 @@ function NoteHistoryPanel({ noteId, onClose }: NoteHistoryPanelProps) {
         <VersionHistory
           versions={versions}
           currentVersion={versionsData.currentVersion}
-          onRestore={(version) => {
-            // TODO: Implement restore functionality
-            console.log('Restore version:', version);
+          onRestore={(_version) => {
+            // Version restore functionality not yet implemented.
+            // When implemented, this should:
+            // 1. Confirm with user before restoring
+            // 2. Call API to restore the version
+            // 3. Refresh the note content
+            // See: https://github.com/troykelly/openclaw-projects/issues/657
           }}
           className="h-full"
         />
