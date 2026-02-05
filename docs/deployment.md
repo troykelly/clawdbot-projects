@@ -7,6 +7,7 @@ This guide covers deploying openclaw-projects using Docker Compose, from simple 
 - [Architecture Overview](#architecture-overview)
 - [Quick Start (Basic Deployment)](#quick-start-basic-deployment)
 - [Production Deployment with Traefik](#production-deployment-with-traefik)
+- [Full Deployment with OpenClaw Gateway](#full-deployment-with-openclaw-gateway)
 - [Environment Variable Reference](#environment-variable-reference)
 - [DNS Provider Configuration](#dns-provider-configuration)
 - [Running Behind Another Load Balancer](#running-behind-another-load-balancer)
@@ -304,6 +305,119 @@ watch docker compose -f docker-compose.traefik.yml ps
 
 # Check specific service health
 docker inspect --format='{{.State.Health.Status}}' openclaw-api
+```
+
+---
+
+## Full Deployment with OpenClaw Gateway
+
+The full deployment (`docker-compose.full.yml`) extends the Traefik configuration to include the OpenClaw AI agent gateway. This provides a complete self-hosted AI assistant platform with:
+
+- All services from the production Traefik deployment
+- OpenClaw gateway for AI agent orchestration
+- WebSocket endpoint for real-time agent connections
+- Webhook receiver for messaging platform callbacks
+- Dashboard/debug UI for monitoring
+
+### Architecture
+
+```
+                         Internet
+                            │
+                            ▼
+                    ┌──────────────────┐
+                    │   Traefik 3.6    │
+                    │   :443 (HTTPS)   │
+                    └─────────┬────────┘
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        │                     │                     │
+        ▼                     ▼                     ▼
+┌───────────────┐    ┌───────────────┐    ┌───────────────┐
+│    DOMAIN/    │    │ api.DOMAIN/  │    │ DOMAIN/openclaw│
+│    Frontend   │    │     WAF      │    │ ws.DOMAIN/     │
+│               │    │      │       │    │ hooks.DOMAIN/  │
+└───────────────┘    │      ▼       │    └───────┬───────┘
+                     │     API      │            │
+                     └──────────────┘            ▼
+                                        ┌───────────────┐
+                                        │   OpenClaw    │
+                                        │   Gateway     │
+                                        └───────────────┘
+```
+
+### Prerequisites
+
+- All prerequisites from Production Deployment
+- At least one AI model provider API key (OpenAI, Anthropic, or Google AI)
+- (Optional) Messaging platform credentials (Telegram, Discord, Slack, etc.)
+
+### Steps
+
+1. **Complete environment setup** from the Production Deployment section.
+
+2. **Add OpenClaw Gateway configuration:**
+
+   ```bash
+   # Generate gateway authentication token
+   OPENCLAW_GATEWAY_TOKEN=$(openssl rand -hex 32)
+   echo "OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}" >> .env
+
+   # Add at least one model provider key (example: Anthropic)
+   echo "ANTHROPIC_API_KEY=sk-ant-your-key-here" >> .env
+   ```
+
+3. **Configure messaging channels** (optional):
+
+   ```bash
+   # Telegram (create bot via @BotFather)
+   echo "TELEGRAM_BOT_TOKEN=123456789:ABCdef..." >> .env
+
+   # Discord (create at discord.com/developers)
+   echo "DISCORD_BOT_TOKEN=your-token" >> .env
+   echo "DISCORD_APPLICATION_ID=your-app-id" >> .env
+   ```
+
+4. **Start the full stack:**
+
+   ```bash
+   docker compose -f docker-compose.full.yml up -d
+   ```
+
+5. **Access the services:**
+
+   | URL | Service |
+   |-----|---------|
+   | `https://DOMAIN/` | Frontend app |
+   | `https://api.DOMAIN/` | API (via WAF) |
+   | `https://DOMAIN/openclaw/` | OpenClaw dashboard |
+   | `wss://ws.DOMAIN/` | WebSocket endpoint |
+   | `https://hooks.DOMAIN/` | Webhook receiver |
+
+### OpenClaw Plugin Integration
+
+The OpenClaw gateway automatically connects to the openclaw-projects API using:
+
+- `OPENCLAW_PROJECTS_API_URL`: Internal Docker network URL (`http://api:3001`)
+- `OPENCLAW_PROJECTS_AUTH_SECRET`: Shared authentication secret
+
+To use the plugin with an external OpenClaw gateway, see the [OpenClaw Integration Guide](./guides/openclaw-integration.md).
+
+### Troubleshooting Full Deployment
+
+**OpenClaw gateway not starting:**
+```bash
+docker logs openclaw-gateway
+```
+
+**Check gateway health:**
+```bash
+curl -k https://localhost/openclaw/health
+```
+
+**Verify plugin connection to API:**
+```bash
+docker exec openclaw-gateway wget -q -O - http://api:3001/health
 ```
 
 ---
