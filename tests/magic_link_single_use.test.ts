@@ -4,7 +4,7 @@
  *
  * IMPORTANT: Magic link tokens are SINGLE-USE by design.
  * - Tokens are consumed on first use (via /api/auth/consume endpoint)
- * - Attempting to reuse a consumed token returns 401
+ * - Attempting to reuse a consumed token returns 400 (invalid/expired token)
  * - This is a critical security feature - do not change without security review
  *
  * Developer Note: When testing magic links during development:
