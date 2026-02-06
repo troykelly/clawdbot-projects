@@ -7,6 +7,7 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/ui/lib/api-client.ts';
+import { useUserEmail } from '@/ui/contexts/user-context';
 
 /** Default stale time for note queries (5 minutes) */
 const NOTE_STALE_TIME = 5 * 60 * 1000;
@@ -47,41 +48,47 @@ export const noteKeys = {
 };
 
 /**
- * Build query string from ListNotesParams.
+ * Build query string from ListNotesParams and user email.
  */
-function buildNotesQueryString(params?: ListNotesParams): string {
-  if (!params) return '';
-
+function buildNotesQueryString(
+  userEmail: string | null,
+  params?: ListNotesParams
+): string {
   const searchParams = new URLSearchParams();
 
-  if (params.notebookId) {
+  // user_email is required by the API
+  if (userEmail) {
+    searchParams.set('user_email', userEmail);
+  }
+
+  if (params?.notebookId) {
     searchParams.set('notebookId', params.notebookId);
   }
-  if (params.tags && params.tags.length > 0) {
+  if (params?.tags && params.tags.length > 0) {
     params.tags.forEach((tag) => searchParams.append('tags', tag));
   }
-  if (params.visibility) {
+  if (params?.visibility) {
     searchParams.set('visibility', params.visibility);
   }
-  if (params.search) {
+  if (params?.search) {
     searchParams.set('search', params.search);
   }
-  if (params.isPinned !== undefined) {
+  if (params?.isPinned !== undefined) {
     searchParams.set('isPinned', String(params.isPinned));
   }
-  if (params.includeDeleted) {
+  if (params?.includeDeleted) {
     searchParams.set('includeDeleted', 'true');
   }
-  if (params.limit !== undefined) {
+  if (params?.limit !== undefined) {
     searchParams.set('limit', String(params.limit));
   }
-  if (params.offset !== undefined) {
+  if (params?.offset !== undefined) {
     searchParams.set('offset', String(params.offset));
   }
-  if (params.sortBy) {
+  if (params?.sortBy) {
     searchParams.set('sortBy', params.sortBy);
   }
-  if (params.sortOrder) {
+  if (params?.sortOrder) {
     searchParams.set('sortOrder', params.sortOrder);
   }
 
@@ -100,13 +107,15 @@ export function useNotes(
   params?: ListNotesParams,
   options?: { enabled?: boolean; staleTime?: number }
 ) {
-  const queryString = buildNotesQueryString(params);
+  const userEmail = useUserEmail();
+  const queryString = buildNotesQueryString(userEmail, params);
 
   return useQuery({
     queryKey: noteKeys.list(params),
     queryFn: ({ signal }) =>
       apiClient.get<NotesResponse>(`/api/notes${queryString}`, { signal }),
-    enabled: options?.enabled,
+    // Only fetch if we have a user email (authenticated)
+    enabled: (options?.enabled ?? true) && !!userEmail,
     staleTime: options?.staleTime ?? NOTE_LIST_STALE_TIME,
   });
 }
@@ -118,12 +127,15 @@ export function useNotes(
  * @param options - Optional query options (e.g., staleTime)
  * @returns TanStack Query result with `Note`
  */
-export function useNote(id: string, options?: { staleTime?: number }) {
+export function useNote(id: string, options?: { staleTime?: number; enabled?: boolean }) {
+  const userEmail = useUserEmail();
+  const queryString = userEmail ? `?user_email=${encodeURIComponent(userEmail)}` : '';
+
   return useQuery({
     queryKey: noteKeys.detail(id),
     queryFn: ({ signal }) =>
-      apiClient.get<Note>(`/api/notes/${encodeURIComponent(id)}`, { signal }),
-    enabled: !!id,
+      apiClient.get<Note>(`/api/notes/${encodeURIComponent(id)}${queryString}`, { signal }),
+    enabled: (options?.enabled ?? true) && !!id && !!userEmail,
     staleTime: options?.staleTime ?? NOTE_STALE_TIME,
   });
 }
