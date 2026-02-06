@@ -268,15 +268,65 @@ docker exec openclaw-gateway wget -q -O - http://api:3001/health
 docker exec openclaw-api wget -q -O - http://localhost:3001/health
 ```
 
+## Step 5: Use the Skill Store (Optional)
+
+The Skill Store provides persistent, namespaced storage for skills that need to maintain state, cache data, or process content on a schedule.
+
+### Store Data from a Skill
+
+Skills use the `skill_store_put` tool to persist data:
+
+```
+skill_store_put({
+  skill_id: "my-skill",
+  collection: "config",
+  key: "settings",
+  data: { theme: "dark", language: "en" }
+})
+```
+
+### Search Stored Content
+
+Skills can search across their stored data using full-text or semantic search:
+
+```
+skill_store_search({
+  skill_id: "my-skill",
+  query: "configuration options",
+  semantic: true
+})
+```
+
+### Set Up Scheduled Processing
+
+Create recurring schedules that fire webhooks to your gateway for periodic skill processing:
+
+```bash
+curl -X POST https://api.your-domain.com/api/skill-store/schedules \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "skill_id": "my-skill",
+    "cron_expression": "0 9 * * *",
+    "webhook_url": "https://gateway.your-domain.com/hooks/daily-process",
+    "payload_template": { "action": "daily_digest" }
+  }'
+```
+
+For full details, see the [Skill Store Developer Guide](./skill-store-guide.md).
+
 ## Next Steps
 
 - **Explore the Dashboard**: Visit `https://your-domain.com` to manage tasks and view activity
 - **Configure Channels**: Add Telegram, Discord, or other messaging platforms to your gateway
 - **Set Up Reminders**: Use the `not_before` field on tasks to create reminders
 - **Browse Contacts**: Link your contacts across platforms for unified identity
+- **Build Skills with Persistent State**: Use the [Skill Store](./skill-store-guide.md) for skills that need to remember, search, and process data
 
 ## Reference
 
 - [Deployment Guide](../deployment.md) - Full deployment options and configuration
 - [Plugin README](../../packages/openclaw-plugin/README.md) - Plugin API reference
+- [Skill Store API Reference](../api/skill-store.md) - Complete Skill Store endpoint documentation
+- [Skill Store Developer Guide](./skill-store-guide.md) - Patterns and best practices for skill development
 - [OpenClaw Documentation](https://docs.openclaw.ai/) - Gateway configuration
