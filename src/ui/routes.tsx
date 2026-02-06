@@ -62,6 +62,9 @@ const NotFoundPage = React.lazy(() =>
 const NotesPage = React.lazy(() =>
   import('@/ui/pages/NotesPage.js').then((m) => ({ default: m.NotesPage }))
 );
+const SkillStorePage = React.lazy(() =>
+  import('@/ui/pages/SkillStorePage.js').then((m) => ({ default: m.SkillStorePage }))
+);
 
 /** Loading fallback shown while lazy-loaded pages are being fetched. */
 function PageLoader(): React.JSX.Element {
@@ -172,6 +175,10 @@ export const routes: RouteObject[] = [
           { index: true, element: lazy(NotesPage) },
           { path: 'notes/:noteId', element: lazy(NotesPage) },
         ],
+      },
+      {
+        path: 'skill-store',
+        element: lazy(SkillStorePage),
       },
       {
         path: 'settings',

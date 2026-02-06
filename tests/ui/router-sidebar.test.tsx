@@ -28,6 +28,7 @@ function renderSidebarWithRouter(initialPath = '/activity') {
         { path: 'people', element: <div data-testid="page-people">People</div> },
         { path: 'memory', element: <div data-testid="page-memory">Memory</div> },
         { path: 'communications', element: <div data-testid="page-communications">Communications</div> },
+        { path: 'skill-store', element: <div data-testid="page-skill-store">Skill Store</div> },
         { path: 'settings', element: <div data-testid="page-settings">Settings</div> },
         { path: 'search', element: <div data-testid="page-search">Search</div> },
       ],
@@ -55,8 +56,8 @@ describe('RouterSidebar', () => {
     renderSidebarWithRouter('/activity');
     const nav = screen.getByRole('navigation', { name: 'Main navigation' });
     const links = nav.querySelectorAll('a');
-    // 5 main nav items: Activity, Projects, People, Memory, Communications
-    expect(links.length).toBe(5);
+    // 6 main nav items: Activity, Projects, People, Memory, Communications, Skill Store
+    expect(links.length).toBe(6);
   });
 
   it('renders Settings link in the footer', () => {
