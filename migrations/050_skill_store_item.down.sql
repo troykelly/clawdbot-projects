@@ -15,14 +15,14 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL;
 END $do$;
 
--- Remove functions
+-- Remove table first (cascades triggers and indexes)
+DROP TABLE IF EXISTS skill_store_item;
+
+-- Remove functions (safe now that dependent triggers are gone)
 DROP FUNCTION IF EXISTS skill_store_purge_soft_deleted();
 DROP FUNCTION IF EXISTS skill_store_cleanup_expired();
 DROP FUNCTION IF EXISTS update_skill_store_item_updated_at();
 DROP FUNCTION IF EXISTS skill_store_item_search_vector_update();
-
--- Remove table (cascades triggers and indexes)
-DROP TABLE IF EXISTS skill_store_item;
 
 -- Remove enum type
 DROP TYPE IF EXISTS skill_store_item_status;
