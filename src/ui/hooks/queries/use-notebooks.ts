@@ -7,6 +7,7 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/ui/lib/api-client.ts';
+import { useUserEmail } from '@/ui/contexts/user-context';
 
 /** Default stale time for notebook queries (5 minutes) */
 const NOTEBOOK_STALE_TIME = 5 * 60 * 1000;
@@ -41,29 +42,35 @@ export const notebookKeys = {
 };
 
 /**
- * Build query string from ListNotebooksParams.
+ * Build query string from ListNotebooksParams and user email.
  */
-function buildNotebooksQueryString(params?: ListNotebooksParams): string {
-  if (!params) return '';
-
+function buildNotebooksQueryString(
+  userEmail: string | null,
+  params?: ListNotebooksParams
+): string {
   const searchParams = new URLSearchParams();
 
-  if (params.parentId !== undefined) {
+  // user_email is required by the API
+  if (userEmail) {
+    searchParams.set('user_email', userEmail);
+  }
+
+  if (params?.parentId !== undefined) {
     searchParams.set('parentId', params.parentId ?? 'null');
   }
-  if (params.includeArchived) {
+  if (params?.includeArchived) {
     searchParams.set('includeArchived', 'true');
   }
-  if (params.includeNoteCounts !== undefined) {
+  if (params?.includeNoteCounts !== undefined) {
     searchParams.set('includeNoteCounts', String(params.includeNoteCounts));
   }
-  if (params.includeChildCounts !== undefined) {
+  if (params?.includeChildCounts !== undefined) {
     searchParams.set('includeChildCounts', String(params.includeChildCounts));
   }
-  if (params.limit !== undefined) {
+  if (params?.limit !== undefined) {
     searchParams.set('limit', String(params.limit));
   }
-  if (params.offset !== undefined) {
+  if (params?.offset !== undefined) {
     searchParams.set('offset', String(params.offset));
   }
 
@@ -82,7 +89,8 @@ export function useNotebooks(
   params?: ListNotebooksParams,
   options?: { enabled?: boolean; staleTime?: number }
 ) {
-  const queryString = buildNotebooksQueryString(params);
+  const userEmail = useUserEmail();
+  const queryString = buildNotebooksQueryString(userEmail, params);
 
   return useQuery({
     queryKey: notebookKeys.list(params),
@@ -90,7 +98,7 @@ export function useNotebooks(
       apiClient.get<NotebooksResponse>(`/api/notebooks${queryString}`, {
         signal,
       }),
-    enabled: options?.enabled,
+    enabled: (options?.enabled ?? true) && !!userEmail,
     staleTime: options?.staleTime ?? NOTEBOOK_LIST_STALE_TIME,
   });
 }
@@ -108,9 +116,14 @@ export function useNotebook(
     includeNotes?: boolean;
     includeChildren?: boolean;
     staleTime?: number;
+    enabled?: boolean;
   }
 ) {
+  const userEmail = useUserEmail();
   const searchParams = new URLSearchParams();
+  if (userEmail) {
+    searchParams.set('user_email', userEmail);
+  }
   if (options?.includeNotes) {
     searchParams.set('includeNotes', 'true');
   }
@@ -126,7 +139,7 @@ export function useNotebook(
         `/api/notebooks/${encodeURIComponent(id)}${queryString ? `?${queryString}` : ''}`,
         { signal }
       ),
-    enabled: !!id,
+    enabled: (options?.enabled ?? true) && !!id && !!userEmail,
     staleTime: options?.staleTime ?? NOTEBOOK_STALE_TIME,
   });
 }
@@ -142,14 +155,24 @@ export function useNotebooksTree(
   includeNoteCounts = false,
   options?: { staleTime?: number }
 ) {
-  const queryString = includeNoteCounts ? '?includeNoteCounts=true' : '';
+  const userEmail = useUserEmail();
+  const searchParams = new URLSearchParams();
+  if (userEmail) {
+    searchParams.set('user_email', userEmail);
+  }
+  if (includeNoteCounts) {
+    searchParams.set('includeNoteCounts', 'true');
+  }
+  const queryString = searchParams.toString();
 
   return useQuery({
     queryKey: notebookKeys.tree(),
     queryFn: ({ signal }) =>
-      apiClient.get<NotebookTreeNode[]>(`/api/notebooks/tree${queryString}`, {
-        signal,
-      }),
+      apiClient.get<NotebookTreeNode[]>(
+        `/api/notebooks/tree${queryString ? `?${queryString}` : ''}`,
+        { signal }
+      ),
+    enabled: !!userEmail,
     staleTime: options?.staleTime ?? NOTEBOOK_TREE_STALE_TIME,
   });
 }
