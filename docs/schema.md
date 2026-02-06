@@ -70,6 +70,77 @@ Next-actionable query:
   - Subtype table attaching an actionable communication task to a thread/message
   - A trigger forces the parent `work_item.task_type = 'communication'`
 
+## Skill Store (Epic #794)
+
+### skill_store_item (Migration 050)
+
+Persistent state storage for OpenClaw skills -- a namespaced key-value-plus-document store.
+
+- `skill_store_item`
+  - Scoped by `(skill_id, collection, key)` -- different from the memory table which is scoped by `(user_email, work_item_id, contact_id)`.
+  - `skill_id` (text, NOT NULL): Self-declared skill identifier.
+  - `collection` (text, NOT NULL, default `_default`): Logical grouping within a skill.
+  - `key` (text, nullable): When set, enables upsert on `(skill_id, collection, key)`.
+  - Content fields: `title`, `summary`, `content` (all text, nullable).
+  - `data` (jsonb, default `{}`): Structured JSON payload with 1MB constraint.
+  - Media fields: `media_url`, `media_type`, `source_url`.
+  - `status` (`skill_store_item_status` enum: `active|archived|processing`, default `active`).
+  - `tags` (text[], default `{}`): Classification tags with GIN index.
+  - `priority` (integer, default 0).
+  - `expires_at` (timestamptz, nullable): TTL expiration, auto-cleaned by pgcron every 15 minutes.
+  - `pinned` (boolean, default false): Pinned items survive TTL cleanup.
+  - Embedding columns: `embedding` (vector(1024)), `embedding_model`, `embedding_provider`, `embedding_status` (`complete|pending|failed`).
+  - `search_vector` (tsvector): Auto-maintained by trigger from title (A), summary (B), content (C).
+  - `user_email` (text, nullable): Multi-user isolation scope. NULL = shared.
+  - `deleted_at` (timestamptz, nullable): Soft delete. Purged after 30 days.
+
+Key indexes:
+- Partial unique index on `(skill_id, collection, key)` WHERE `key IS NOT NULL AND deleted_at IS NULL`.
+- GIN indexes on `tags`, `data` (jsonb_path_ops), and `search_vector`.
+- HNSW index on `embedding` for cosine similarity search.
+
+pgcron jobs:
+- `skill_store_cleanup_expired`: Runs every 15 minutes, hard-deletes expired non-pinned items (max 5000 per batch).
+- `skill_store_purge_soft_deleted`: Runs daily at 3:00 AM, hard-deletes items soft-deleted over 30 days ago.
+
+### skill_store_schedule (Migration 051)
+
+Recurring cron schedules for skill processing via webhooks.
+
+- `skill_store_schedule`
+  - `skill_id` (text, NOT NULL): Skill identifier.
+  - `collection` (text, nullable): Optional scope to a specific collection.
+  - `cron_expression` (text, NOT NULL): Standard 5-field cron. Minimum interval: 5 minutes (enforced by trigger).
+  - `timezone` (text, NOT NULL, default `UTC`): IANA timezone for cron evaluation.
+  - `webhook_url` (text, NOT NULL): URL called when schedule fires.
+  - `webhook_headers` (jsonb, default `{}`): Headers sent with webhook request.
+  - `payload_template` (jsonb, default `{}`): Template merged with runtime data.
+  - `enabled` (boolean, default true).
+  - `max_retries` (integer, default 5): Max consecutive failures before auto-disabling.
+  - `last_run_status` (text, nullable): `success|failed|skipped`, NULL = never run or currently running.
+  - `last_run_at`, `next_run_at` (timestamptz, nullable).
+
+Constraints:
+- Unique index on `(skill_id, collection, cron_expression)`.
+- DB trigger `validate_cron_frequency` rejects expressions firing more than every 5 minutes.
+
+pgcron jobs:
+- `skill_store_schedule_enqueue`: Runs every minute, finds due schedules and enqueues `internal_job` entries with idempotency keys.
+
+### skill_store_activity (Migration 052)
+
+Activity log for skill store operations (for the activity feed).
+
+- `skill_store_activity`
+  - `activity_type` (`skill_store_activity_type` enum: `item_created|item_updated|item_deleted|item_archived|items_bulk_created|items_bulk_deleted|schedule_triggered|schedule_paused|schedule_resumed|collection_deleted`).
+  - `skill_id` (text, NOT NULL).
+  - `collection` (text, nullable).
+  - `description` (text, NOT NULL): Human-readable description.
+  - `metadata` (jsonb, default `{}`): Additional context (e.g., item_id, count).
+  - `read_at` (timestamptz, nullable): For read/unread tracking.
+
+---
+
 Notes:
 
 - IDs are UUIDv7 generated in Postgres via `new_uuid()`.
