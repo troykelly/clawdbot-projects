@@ -763,6 +763,113 @@ export interface NotebooksSharedWithMeResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Skill Store
+// ---------------------------------------------------------------------------
+
+/** Skill store item status. */
+export type SkillStoreItemStatus = 'active' | 'archived' | 'processing';
+
+/** Skill store item embedding status. */
+export type SkillStoreEmbeddingStatus = 'pending' | 'complete' | 'failed';
+
+/** Single skill store item returned from the API. */
+export interface SkillStoreItem {
+  id: string;
+  skill_id: string;
+  collection: string;
+  key: string;
+  title: string | null;
+  summary: string | null;
+  content: string | null;
+  data: unknown | null;
+  media_url: string | null;
+  media_type: string | null;
+  source_url: string | null;
+  status: SkillStoreItemStatus;
+  tags: string[];
+  priority: number;
+  expires_at: string | null;
+  pinned: boolean;
+  embedding_status: SkillStoreEmbeddingStatus | null;
+  user_email: string | null;
+  created_by: string | null;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Response from GET /api/skill-store/items */
+export interface SkillStoreItemsResponse {
+  items: SkillStoreItem[];
+  total: number;
+  has_more: boolean;
+}
+
+/** Skill summary from GET /api/admin/skill-store/skills */
+export interface SkillStoreSummary {
+  skill_id: string;
+  item_count: number;
+  collection_count: number;
+  last_activity: string;
+}
+
+/** Response from GET /api/admin/skill-store/skills */
+export interface SkillStoreSkillsResponse {
+  skills: SkillStoreSummary[];
+}
+
+/** Collection summary from GET /api/skill-store/collections */
+export interface SkillStoreCollection {
+  collection: string;
+  count: number;
+  latest_at: string | null;
+}
+
+/** Response from GET /api/skill-store/collections */
+export interface SkillStoreCollectionsResponse {
+  collections: SkillStoreCollection[];
+}
+
+/** Schedule from GET /api/skill-store/schedules */
+export interface SkillStoreSchedule {
+  id: string;
+  skill_id: string;
+  collection: string | null;
+  cron_expression: string;
+  timezone: string;
+  webhook_url: string;
+  webhook_headers: Record<string, string> | null;
+  payload_template: Record<string, unknown> | null;
+  enabled: boolean;
+  max_retries: number;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  last_run_status: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Response from GET /api/skill-store/schedules */
+export interface SkillStoreSchedulesResponse {
+  schedules: SkillStoreSchedule[];
+  total: number;
+}
+
+/** Body for POST /api/skill-store/search */
+export interface SkillStoreSearchBody {
+  skill_id: string;
+  query: string;
+  collection?: string;
+  limit?: number;
+}
+
+/** Response from POST /api/skill-store/search */
+export interface SkillStoreSearchResponse {
+  items: SkillStoreItem[];
+  total: number;
+}
+
+// ---------------------------------------------------------------------------
 // Bootstrap (server-injected data)
 // ---------------------------------------------------------------------------
 
