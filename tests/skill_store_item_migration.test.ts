@@ -428,7 +428,7 @@ describe('Skill Store Item Migration (Issue #795)', () => {
       expect(result.rows[0].schedule).toBe('0 3 * * *');
     });
 
-    it('skill_store_cleanup_expired function deletes expired non-pinned items', async () => {
+    it('skill_store_cleanup_expired function soft-deletes expired non-pinned items', async () => {
       // Insert expired item
       await pool.query(
         `INSERT INTO skill_store_item (skill_id, key, expires_at)
@@ -447,16 +447,23 @@ describe('Skill Store Item Migration (Issue #795)', () => {
          VALUES ('s1', 'pinned', now() - interval '1 hour', true)`
       );
 
-      const deleted = await pool.query(
+      const updated = await pool.query(
         `SELECT skill_store_cleanup_expired() as count`
       );
-      expect(parseInt(deleted.rows[0].count)).toBe(1);
+      expect(parseInt(updated.rows[0].count)).toBe(1);
 
-      // Verify: valid + pinned remain, expired is gone
+      // Verify: expired item is soft-deleted (deleted_at set), not hard-deleted
       const remaining = await pool.query(
-        `SELECT key FROM skill_store_item WHERE skill_id = 's1' ORDER BY key`
+        `SELECT key FROM skill_store_item WHERE skill_id = 's1' AND deleted_at IS NULL ORDER BY key`
       );
       expect(remaining.rows.map((r) => r.key)).toEqual(['pinned', 'valid']);
+
+      // Verify the expired item still exists with deleted_at set
+      const softDeleted = await pool.query(
+        `SELECT key FROM skill_store_item WHERE skill_id = 's1' AND deleted_at IS NOT NULL`
+      );
+      expect(softDeleted.rows).toHaveLength(1);
+      expect(softDeleted.rows[0].key).toBe('expired');
     });
 
     it('skill_store_purge_soft_deleted function removes old soft-deleted items', async () => {
@@ -571,6 +578,120 @@ describe('Skill Store Item Migration (Issue #795)', () => {
       expect(result.rows).toHaveLength(1);
       expect(result.rows[0].title).toBe('v2');
       expect(result.rows[0].data).toEqual({ version: 2 });
+    });
+  });
+
+  // ── Migration 055 fixes (Issue #827) ──────────────────────────────────
+
+  describe('Issue #827 migration fixes', () => {
+    it('TTL cleanup soft-deletes instead of hard delete', async () => {
+      // Insert an expired item
+      await pool.query(
+        `INSERT INTO skill_store_item (skill_id, collection, title, expires_at)
+         VALUES ('test-sk', 'ttl-test', 'Expired Item', now() - interval '1 hour')`
+      );
+
+      // Run the cleanup function
+      const cleanupResult = await pool.query('SELECT skill_store_cleanup_expired()');
+      expect(parseInt(cleanupResult.rows[0].skill_store_cleanup_expired, 10)).toBeGreaterThanOrEqual(1);
+
+      // Item should still exist but be soft-deleted
+      const itemResult = await pool.query(
+        `SELECT deleted_at FROM skill_store_item
+         WHERE skill_id = 'test-sk' AND collection = 'ttl-test' AND title = 'Expired Item'`
+      );
+      expect(itemResult.rows).toHaveLength(1);
+      expect(itemResult.rows[0].deleted_at).not.toBeNull();
+    });
+
+    it('skill_id CHECK constraint rejects empty strings', async () => {
+      await expect(
+        pool.query(
+          `INSERT INTO skill_store_item (skill_id, collection) VALUES ('', 'test')`
+        )
+      ).rejects.toThrow();
+    });
+
+    it('skill_id CHECK constraint rejects invalid characters', async () => {
+      await expect(
+        pool.query(
+          `INSERT INTO skill_store_item (skill_id, collection) VALUES ('bad skill!', 'test')`
+        )
+      ).rejects.toThrow();
+    });
+
+    it('skill_id CHECK constraint accepts valid formats', async () => {
+      await pool.query(
+        `INSERT INTO skill_store_item (skill_id, collection) VALUES ('valid-skill_v2', 'test')`
+      );
+      const result = await pool.query(
+        `SELECT id FROM skill_store_item WHERE skill_id = 'valid-skill_v2'`
+      );
+      expect(result.rows).toHaveLength(1);
+    });
+
+    it('skill_store_activity uses new_uuid() (UUIDv7) for new rows', async () => {
+      await pool.query(
+        `INSERT INTO skill_store_activity (activity_type, skill_id, description)
+         VALUES ('item_created', 'test-sk', 'Test activity')`
+      );
+      const result = await pool.query(
+        `SELECT id::text FROM skill_store_activity WHERE skill_id = 'test-sk' LIMIT 1`
+      );
+      expect(result.rows).toHaveLength(1);
+      // UUIDv7 starts with a timestamp-derived prefix (version nibble = 7)
+      const uuid = result.rows[0].id;
+      // Version nibble is character at index 14 (after the 3rd hyphen group)
+      expect(uuid[14]).toBe('7');
+    });
+
+    it('search vector trigger fires only on content column changes', async () => {
+      // Insert an item with a title
+      await pool.query(
+        `INSERT INTO skill_store_item (skill_id, collection, title)
+         VALUES ('test-sk', 'trigger-test', 'Original Title')`
+      );
+
+      // Get the initial search_vector
+      const initial = await pool.query(
+        `SELECT search_vector::text FROM skill_store_item
+         WHERE skill_id = 'test-sk' AND collection = 'trigger-test'`
+      );
+      const initialVector = initial.rows[0].search_vector;
+      expect(initialVector).toBeTruthy();
+
+      // Update a non-content column (tags) — search_vector should NOT change
+      await pool.query(
+        `UPDATE skill_store_item SET tags = ARRAY['tag1']
+         WHERE skill_id = 'test-sk' AND collection = 'trigger-test'`
+      );
+
+      const afterTagUpdate = await pool.query(
+        `SELECT search_vector::text FROM skill_store_item
+         WHERE skill_id = 'test-sk' AND collection = 'trigger-test'`
+      );
+      expect(afterTagUpdate.rows[0].search_vector).toBe(initialVector);
+
+      // Update title (content column) — search_vector SHOULD change
+      await pool.query(
+        `UPDATE skill_store_item SET title = 'Completely Different Topic'
+         WHERE skill_id = 'test-sk' AND collection = 'trigger-test'`
+      );
+
+      const afterTitleUpdate = await pool.query(
+        `SELECT search_vector::text FROM skill_store_item
+         WHERE skill_id = 'test-sk' AND collection = 'trigger-test'`
+      );
+      expect(afterTitleUpdate.rows[0].search_vector).not.toBe(initialVector);
+    });
+
+    it('skill_store_schedule skill_id CHECK constraint works', async () => {
+      await expect(
+        pool.query(
+          `INSERT INTO skill_store_schedule (skill_id, cron_expression, webhook_url)
+           VALUES ('bad skill!', '0 9 * * 1', 'https://example.com/hook')`
+        )
+      ).rejects.toThrow();
     });
   });
 });
