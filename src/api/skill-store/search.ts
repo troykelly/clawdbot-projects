@@ -11,6 +11,14 @@ import type { Pool } from 'pg';
 import { embeddingService } from '../embeddings/service.ts';
 import { EmbeddingError } from '../embeddings/errors.ts';
 
+/**
+ * Escape ILIKE wildcard characters (% and _) in user input.
+ * Prevents users from injecting wildcards that match unintended patterns.
+ */
+function escapeIlikeWildcards(input: string): string {
+  return input.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
 /** Shape of a search result item. */
 export interface SkillStoreSearchResult {
   id: string;
@@ -300,8 +308,8 @@ export async function searchSkillStoreSemantic(
     };
   }
 
-  // Fall back to text search using ILIKE
-  values.push(`%${params.query}%`);
+  // Fall back to text search using ILIKE (escape wildcards to prevent injection)
+  values.push(`%${escapeIlikeWildcards(params.query)}%`);
   const searchParamIndex = nextParam++;
 
   conditions.push(

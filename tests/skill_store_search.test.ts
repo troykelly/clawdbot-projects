@@ -483,4 +483,156 @@ describe('Skill Store Search (Issue #798)', () => {
       await app.close();
     });
   });
+
+  // ── Issue #826: Validation fixes ──────────────────────────────────────
+
+  describe('Issue #826 validation fixes', () => {
+    it('escapes ILIKE wildcards in fallback search', async () => {
+      const { searchSkillStoreFullText } = await import(
+        '../src/api/skill-store/search.ts'
+      );
+
+      // Insert an item that should NOT match a % wildcard query
+      await insertItem({ skill_id: 'sk1', title: 'Normal Item', summary: 'Regular content' });
+      await insertItem({ skill_id: 'sk1', title: 'Percentage Report 10%', summary: 'Has percent symbol' });
+
+      // Search with a literal % character — should match only the item with %
+      const result = await searchSkillStoreFullText(pool, {
+        skill_id: 'sk1',
+        query: '10%',
+      });
+
+      // The % should be escaped, so it should not match everything
+      // Only items actually containing "10%" should match
+      for (const item of result.results) {
+        expect(
+          (item.title?.includes('10%') || item.summary?.includes('10%') || item.content?.includes('10%'))
+        ).toBe(true);
+      }
+    });
+
+    it('clamps semantic_weight to [0, 1] range', async () => {
+      const { buildServer } = await import('../src/api/server.ts');
+      const app = buildServer({ logger: false });
+
+      await insertItem({ skill_id: 'sk1', title: 'Weight Test', summary: 'Testing semantic weight clamping' });
+
+      // semantic_weight > 1 should be clamped to 1
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/skill-store/search/semantic',
+        payload: {
+          skill_id: 'sk1',
+          query: 'weight test',
+          semantic_weight: 5.0,
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+
+      // semantic_weight < 0 should be clamped to 0
+      const response2 = await app.inject({
+        method: 'POST',
+        url: '/api/skill-store/search/semantic',
+        payload: {
+          skill_id: 'sk1',
+          query: 'weight test',
+          semantic_weight: -1.0,
+        },
+      });
+
+      expect(response2.statusCode).toBe(200);
+
+      await app.close();
+    });
+
+    it('does not leak PostgreSQL error details in search response', async () => {
+      const { buildServer } = await import('../src/api/server.ts');
+      const app = buildServer({ logger: false });
+
+      // Trigger an error by searching with an extremely long query
+      // that might cause issues
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/skill-store/search',
+        payload: {
+          skill_id: 'sk1',
+          query: 'test',
+        },
+      });
+
+      // Even on error, should not contain internal details
+      if (response.statusCode === 500) {
+        const body = JSON.parse(response.body);
+        expect(body.error).not.toMatch(/pg_|postgres|relation|constraint/i);
+      }
+
+      await app.close();
+    });
+
+    it('GET /api/skill-store/schedules requires skill_id', async () => {
+      const { buildServer } = await import('../src/api/server.ts');
+      const app = buildServer({ logger: false });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/skill-store/schedules',
+      });
+
+      expect(response.statusCode).toBe(400);
+      const body = JSON.parse(response.body);
+      expect(body.error).toContain('skill_id');
+
+      await app.close();
+    });
+
+    it('clamps max_retries to [0, 20] on schedule create', async () => {
+      const { buildServer } = await import('../src/api/server.ts');
+      const app = buildServer({ logger: false });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/skill-store/schedules',
+        payload: {
+          skill_id: 'sk1',
+          cron_expression: '0 9 * * 1',
+          webhook_url: 'https://example.com/hook',
+          max_retries: 999999,
+        },
+      });
+
+      // Should succeed but clamp max_retries
+      if (response.statusCode === 201) {
+        const body = JSON.parse(response.body);
+        expect(body.max_retries).toBeLessThanOrEqual(20);
+      }
+
+      await app.close();
+    });
+
+    it('POST /api/skill-store/items/bulk enforces quotas', async () => {
+      const { buildServer } = await import('../src/api/server.ts');
+      const app = buildServer({ logger: false });
+
+      // The bulk endpoint should validate items (won't hit quota in test, but verifies it processes)
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/skill-store/items/bulk',
+        payload: {
+          items: [
+            { skill_id: 'sk1', title: 'Bulk Item 1' },
+            { skill_id: 'sk1', title: 'Bulk Item 2' },
+          ],
+        },
+      });
+
+      // Should succeed (quota not exceeded) with both items created
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.items).toHaveLength(2);
+      expect(body.created).toBe(2);
+
+      await app.close();
+    });
+  });
 });

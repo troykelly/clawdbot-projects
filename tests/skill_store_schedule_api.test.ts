@@ -245,7 +245,7 @@ describe('Skill Store Schedule API (Issue #802)', () => {
     it('returns empty list when no schedules exist', async () => {
       const res = await app.inject({
         method: 'GET',
-        url: '/api/skill-store/schedules',
+        url: '/api/skill-store/schedules?skill_id=test-skill',
       });
 
       expect(res.statusCode).toBe(200);
@@ -254,19 +254,28 @@ describe('Skill Store Schedule API (Issue #802)', () => {
       expect(body.total).toBe(0);
     });
 
-    it('lists all schedules', async () => {
+    it('returns 400 when skill_id is missing', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/skill-store/schedules',
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toContain('skill_id');
+    });
+
+    it('lists schedules scoped to skill_id', async () => {
       await createSchedule({ skill_id: 'skill-1' });
       await createSchedule({ skill_id: 'skill-2' });
 
       const res = await app.inject({
         method: 'GET',
-        url: '/api/skill-store/schedules',
+        url: '/api/skill-store/schedules?skill_id=skill-1',
       });
 
       expect(res.statusCode).toBe(200);
       const body = res.json();
-      expect(body.schedules).toHaveLength(2);
-      expect(body.total).toBe(2);
+      expect(body.schedules).toHaveLength(1);
+      expect(body.schedules[0].skill_id).toBe('skill-1');
     });
 
     it('returns schedule with all expected fields', async () => {
@@ -274,7 +283,7 @@ describe('Skill Store Schedule API (Issue #802)', () => {
 
       const res = await app.inject({
         method: 'GET',
-        url: '/api/skill-store/schedules',
+        url: '/api/skill-store/schedules?skill_id=test-skill',
       });
 
       const schedule = res.json().schedules[0];
@@ -331,28 +340,28 @@ describe('Skill Store Schedule API (Issue #802)', () => {
     });
 
     it('filters by enabled status', async () => {
-      await createSchedule({ skill_id: 'enabled-skill' });
-      await createSchedule({ skill_id: 'disabled-skill', enabled: false });
+      await createSchedule({ skill_id: 'filter-skill' });
+      await createSchedule({ skill_id: 'filter-skill', collection: 'other', cron_expression: '0 10 * * *', enabled: false });
 
       const res = await app.inject({
         method: 'GET',
-        url: '/api/skill-store/schedules?enabled=true',
+        url: '/api/skill-store/schedules?skill_id=filter-skill&enabled=true',
       });
 
       expect(res.statusCode).toBe(200);
       const body = res.json();
       expect(body.schedules).toHaveLength(1);
-      expect(body.schedules[0].skill_id).toBe('enabled-skill');
+      expect(body.schedules[0].enabled).toBe(true);
     });
 
     it('supports pagination with limit and offset', async () => {
       for (let i = 0; i < 5; i++) {
-        await createSchedule({ skill_id: `skill-${i}` });
+        await createSchedule({ skill_id: 'page-skill', collection: `col-${i}`, cron_expression: `${i} 9 * * *` });
       }
 
       const res = await app.inject({
         method: 'GET',
-        url: '/api/skill-store/schedules?limit=2&offset=0',
+        url: '/api/skill-store/schedules?skill_id=page-skill&limit=2&offset=0',
       });
 
       expect(res.statusCode).toBe(200);
@@ -468,7 +477,7 @@ describe('Skill Store Schedule API (Issue #802)', () => {
       // Verify it's gone
       const listRes = await app.inject({
         method: 'GET',
-        url: '/api/skill-store/schedules',
+        url: '/api/skill-store/schedules?skill_id=test-skill',
       });
       expect(listRes.json().schedules).toHaveLength(0);
     });

@@ -12161,7 +12161,14 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
   // ─────────────────────────────────────────────────────────────────────────────
 
   // POST /api/skill-store/search - Full-text search
-  app.post('/api/skill-store/search', async (req, reply) => {
+  app.post('/api/skill-store/search', {
+    config: {
+      rateLimit: {
+        max: 30,
+        timeWindow: '1 minute',
+      },
+    },
+  }, async (req, reply) => {
     const skillStoreSearch = await import('./skill-store/search.ts');
 
     const body = req.body as {
@@ -12182,6 +12189,10 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
       return reply.code(400).send({ error: 'query is required' });
     }
 
+    // Clamp limit/offset to safe ranges
+    const limit = Math.min(Math.max(body.limit ?? 20, 1), 200);
+    const offset = Math.max(body.offset ?? 0, 0);
+
     const pool = createPool();
 
     try {
@@ -12192,8 +12203,8 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
         tags: body.tags,
         status: body.status,
         user_email: body.user_email,
-        limit: body.limit ?? 20,
-        offset: body.offset ?? 0,
+        limit,
+        offset,
       });
 
       return reply.send({
@@ -12201,15 +12212,22 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
         total: result.total,
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      return reply.code(500).send({ error: message });
+      console.error('[SkillStore] Search error:', err instanceof Error ? err.message : err);
+      return reply.code(500).send({ error: 'Search failed. Please try again.' });
     } finally {
       await pool.end();
     }
   });
 
   // POST /api/skill-store/search/semantic - Semantic (vector) search with full-text fallback
-  app.post('/api/skill-store/search/semantic', async (req, reply) => {
+  app.post('/api/skill-store/search/semantic', {
+    config: {
+      rateLimit: {
+        max: 30,
+        timeWindow: '1 minute',
+      },
+    },
+  }, async (req, reply) => {
     const skillStoreSearch = await import('./skill-store/search.ts');
 
     const body = req.body as {
@@ -12232,11 +12250,18 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
       return reply.code(400).send({ error: 'query is required' });
     }
 
+    // Clamp limit/offset to safe ranges
+    const limit = Math.min(Math.max(body.limit ?? 20, 1), 200);
+    const offset = Math.max(body.offset ?? 0, 0);
+
     const pool = createPool();
 
     try {
       // Use hybrid search if semantic_weight is provided, otherwise pure semantic
       if (body.semantic_weight !== undefined) {
+        // Clamp semantic_weight to [0, 1]
+        const semanticWeight = Math.min(1, Math.max(0, body.semantic_weight));
+
         const result = await skillStoreSearch.searchSkillStoreHybrid(pool, {
           skill_id: body.skill_id,
           query: body.query,
@@ -12245,8 +12270,8 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
           status: body.status,
           user_email: body.user_email,
           min_similarity: body.min_similarity ?? 0.3,
-          limit: body.limit ?? 20,
-          semantic_weight: body.semantic_weight,
+          limit,
+          semantic_weight: semanticWeight,
         });
 
         return reply.send({
@@ -12264,8 +12289,8 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
         status: body.status,
         user_email: body.user_email,
         min_similarity: body.min_similarity ?? 0.3,
-        limit: body.limit ?? 20,
-        offset: body.offset ?? 0,
+        limit,
+        offset,
       });
 
       return reply.send({
@@ -12274,8 +12299,8 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
         query_embedding_provider: result.queryEmbeddingProvider,
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      return reply.code(500).send({ error: message });
+      console.error('[SkillStore] Semantic search error:', err instanceof Error ? err.message : err);
+      return reply.code(500).send({ error: 'Search failed. Please try again.' });
     } finally {
       await pool.end();
     }
@@ -13328,6 +13353,44 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
 
     const pool = createPool();
     try {
+      // Quota checks for bulk operations (Issue #826)
+      const skillStoreQuotas = await import('./skill-store/quotas.ts');
+
+      // Aggregate unique skill_ids and collections for quota checks
+      const skillIds = new Set<string>();
+      const collectionKeys = new Set<string>();
+      for (const item of items) {
+        const sid = item.skill_id as string;
+        const col = (item.collection as string) || '_default';
+        skillIds.add(sid);
+        collectionKeys.add(`${sid}:${col}`);
+      }
+
+      // Check item quota for each skill_id
+      for (const sid of skillIds) {
+        const itemQuota = await skillStoreQuotas.checkItemQuota(pool, sid);
+        if (!itemQuota.allowed) {
+          return reply.code(429).send({
+            error: 'Item quota exceeded',
+            current: itemQuota.current,
+            limit: itemQuota.limit,
+          });
+        }
+      }
+
+      // Check collection quotas
+      for (const ck of collectionKeys) {
+        const [sid, col] = ck.split(':');
+        const colQuota = await skillStoreQuotas.checkCollectionQuota(pool, sid, col);
+        if (!colQuota.allowed) {
+          return reply.code(429).send({
+            error: 'Collection quota exceeded',
+            current: colQuota.current,
+            limit: colQuota.limit,
+          });
+        }
+      }
+
       const results: unknown[] = [];
       // Process each item in a transaction
       await pool.query('BEGIN');
@@ -14037,7 +14100,7 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
           JSON.stringify(body.webhook_headers || {}),
           JSON.stringify(body.payload_template || {}),
           body.enabled !== undefined ? body.enabled : true,
-          body.max_retries !== undefined ? body.max_retries : 5,
+          body.max_retries !== undefined ? Math.min(Math.max(Math.floor(body.max_retries), 0), 20) : 5,
         ]
       );
 
@@ -14065,18 +14128,21 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
       offset?: string;
     };
 
-    const limit = Math.min(parseInt(query.limit || '50', 10), 100);
-    const offset = parseInt(query.offset || '0', 10);
+    // skill_id is required to prevent cross-skill data leaks (Issue #826)
+    if (!query.skill_id) {
+      return reply.code(400).send({ error: 'skill_id is required' });
+    }
+
+    const limit = Math.min(Math.max(parseInt(query.limit || '50', 10), 1), 100);
+    const offset = Math.max(parseInt(query.offset || '0', 10), 0);
 
     const conditions: string[] = [];
     const params: (string | number | boolean)[] = [];
     let paramIndex = 1;
 
-    if (query.skill_id) {
-      conditions.push(`skill_id = $${paramIndex}`);
-      params.push(query.skill_id);
-      paramIndex++;
-    }
+    conditions.push(`skill_id = $${paramIndex}`);
+    params.push(query.skill_id);
+    paramIndex++;
 
     if (query.enabled !== undefined) {
       conditions.push(`enabled = $${paramIndex}`);
@@ -14194,7 +14260,7 @@ export function buildServer(options: ProjectsApiOptions = {}): FastifyInstance {
     }
     if (body.max_retries !== undefined) {
       setClauses.push(`max_retries = $${paramIndex}`);
-      params.push(body.max_retries);
+      params.push(Math.min(Math.max(Math.floor(body.max_retries), 0), 20));
       paramIndex++;
     }
 
