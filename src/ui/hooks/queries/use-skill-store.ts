@@ -20,8 +20,8 @@ export const skillStoreKeys = {
   all: ['skill-store'] as const,
   skills: () => [...skillStoreKeys.all, 'skills'] as const,
   collections: (skillId: string) => [...skillStoreKeys.all, 'collections', skillId] as const,
-  items: (skillId: string, collection?: string, status?: string, tags?: string) =>
-    [...skillStoreKeys.all, 'items', skillId, collection, status, tags] as const,
+  items: (skillId: string, collection?: string, status?: string, tags?: string, offset?: number) =>
+    [...skillStoreKeys.all, 'items', skillId, collection, status, tags, offset] as const,
   item: (id: string) => [...skillStoreKeys.all, 'item', id] as const,
   schedules: (skillId: string) => [...skillStoreKeys.all, 'schedules', skillId] as const,
   search: (skillId: string, query: string) => [...skillStoreKeys.all, 'search', skillId, query] as const,
@@ -89,7 +89,7 @@ export function useSkillStoreItems(params: UseSkillStoreItemsParams) {
   if (tags) searchParams.set('tags', tags);
 
   return useQuery({
-    queryKey: skillStoreKeys.items(skillId, collection, status, tags),
+    queryKey: skillStoreKeys.items(skillId, collection, status, tags, offset),
     queryFn: ({ signal }) =>
       apiClient.get<SkillStoreItemsResponse>(
         `/api/skill-store/items?${searchParams.toString()}`,
