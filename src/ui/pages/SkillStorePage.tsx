@@ -11,7 +11,7 @@
  *
  * Uses TanStack Query hooks for data fetching and mutations.
  */
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import {
   Search,
   Package,
@@ -23,11 +23,15 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   ExternalLink,
   Tag,
   Calendar,
   X,
   AlertCircle,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import type {
   SkillStoreItem,
@@ -142,6 +146,25 @@ function getRunStatusBadgeClass(status: string | null): string {
   }
 }
 
+/** Header names that contain sensitive values. */
+const SENSITIVE_HEADER_NAMES = new Set([
+  'authorization',
+  'x-api-key',
+  'x-secret',
+  'api-key',
+  'token',
+  'x-token',
+  'cookie',
+  'x-auth-token',
+  'proxy-authorization',
+]);
+
+/** Check if a header name is sensitive. */
+function isSensitiveHeader(name: string): boolean {
+  const lower = name.toLowerCase();
+  return SENSITIVE_HEADER_NAMES.has(lower) || lower.includes('secret') || lower.includes('password');
+}
+
 /** Pretty-print JSON with syntax highlighting via simple span coloring. */
 function JsonViewer({ data }: { data: unknown }): React.JSX.Element {
   const formatted = useMemo(() => {
@@ -159,6 +182,38 @@ function JsonViewer({ data }: { data: unknown }): React.JSX.Element {
   );
 }
 
+/** Display webhook headers with sensitive values redacted by default. */
+function HeadersViewer({ headers }: { headers: Record<string, string> }): React.JSX.Element {
+  const [revealed, setRevealed] = useState(false);
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between mb-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 px-2 text-xs gap-1"
+          onClick={() => setRevealed(!revealed)}
+          aria-label={revealed ? 'Hide sensitive header values' : 'Reveal sensitive header values'}
+        >
+          {revealed ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
+          {revealed ? 'Hide values' : 'Show values'}
+        </Button>
+      </div>
+      <div className="text-xs font-mono bg-muted/50 rounded-md p-3 space-y-1">
+        {Object.entries(headers).map(([name, value]) => (
+          <div key={name} className="flex gap-2">
+            <span className="text-muted-foreground">{name}:</span>
+            <span className="text-foreground">
+              {!revealed && isSensitiveHeader(name) ? '••••••••' : value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // SkillStorePage
 // ---------------------------------------------------------------------------
@@ -172,6 +227,10 @@ export function SkillStorePage(): React.JSX.Element {
   const [selectedItem, setSelectedItem] = useState<SkillStoreItem | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<SkillStoreItem | null>(null);
+  const [activeTab, setActiveTab] = useState<string>('items');
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [itemsOffset, setItemsOffset] = useState(0);
+  const ITEMS_PER_PAGE = 50;
 
   // Data fetching
   const skillsQuery = useSkillStoreSkills();
@@ -180,6 +239,8 @@ export function SkillStorePage(): React.JSX.Element {
     skillId: selectedSkillId,
     collection: selectedCollection || undefined,
     status: statusFilter !== 'all' ? statusFilter : undefined,
+    limit: ITEMS_PER_PAGE,
+    offset: itemsOffset,
   });
   const schedulesQuery = useSkillStoreSchedules(selectedSkillId);
 
@@ -197,13 +258,18 @@ export function SkillStorePage(): React.JSX.Element {
     }
   }, [skillsQuery.data?.skills, selectedSkillId]);
 
+  // Stable ref to searchMutation to avoid unstable deps in useCallback
+  const searchMutationRef = useRef(searchMutation);
+  searchMutationRef.current = searchMutation;
+
   // Items to display: search results or regular items
+  const searchData = searchMutation.data;
   const displayItems = useMemo(() => {
-    if (activeSearch && searchMutation.data) {
-      return (searchMutation.data as SkillStoreSearchResponse).items;
+    if (activeSearch && searchData) {
+      return searchData.items;
     }
     return itemsQuery.data?.items ?? [];
-  }, [activeSearch, searchMutation.data, itemsQuery.data?.items]);
+  }, [activeSearch, searchData, itemsQuery.data?.items]);
 
   const handleSearch = useCallback(() => {
     if (!searchQuery.trim() || !selectedSkillId) {
@@ -211,13 +277,14 @@ export function SkillStorePage(): React.JSX.Element {
       return;
     }
     setActiveSearch(searchQuery.trim());
-    searchMutation.mutate({
+    setMutationError(null);
+    searchMutationRef.current.mutate({
       skill_id: selectedSkillId,
       query: searchQuery.trim(),
       collection: selectedCollection || undefined,
       limit: 50,
     });
-  }, [searchQuery, selectedSkillId, selectedCollection, searchMutation]);
+  }, [searchQuery, selectedSkillId, selectedCollection]);
 
   const handleClearSearch = useCallback(() => {
     setSearchQuery('');
@@ -231,6 +298,7 @@ export function SkillStorePage(): React.JSX.Element {
 
   const handleDeleteItem = useCallback(
     async (item: SkillStoreItem) => {
+      setMutationError(null);
       try {
         await deleteItemMutation.mutateAsync(item.id);
         setDeleteTarget(null);
@@ -239,7 +307,8 @@ export function SkillStorePage(): React.JSX.Element {
           setSelectedItem(null);
         }
       } catch (err) {
-        console.error('Failed to delete item:', err);
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        setMutationError(`Failed to delete item: ${msg}`);
       }
     },
     [deleteItemMutation, selectedItem],
@@ -247,10 +316,12 @@ export function SkillStorePage(): React.JSX.Element {
 
   const handleTriggerSchedule = useCallback(
     async (schedule: SkillStoreSchedule) => {
+      setMutationError(null);
       try {
         await triggerScheduleMutation.mutateAsync(schedule.id);
       } catch (err) {
-        console.error('Failed to trigger schedule:', err);
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        setMutationError(`Failed to trigger schedule: ${msg}`);
       }
     },
     [triggerScheduleMutation],
@@ -258,6 +329,7 @@ export function SkillStorePage(): React.JSX.Element {
 
   const handleToggleSchedule = useCallback(
     async (schedule: SkillStoreSchedule) => {
+      setMutationError(null);
       try {
         if (schedule.enabled) {
           await pauseScheduleMutation.mutateAsync(schedule.id);
@@ -265,7 +337,8 @@ export function SkillStorePage(): React.JSX.Element {
           await resumeScheduleMutation.mutateAsync(schedule.id);
         }
       } catch (err) {
-        console.error('Failed to toggle schedule:', err);
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        setMutationError(`Failed to toggle schedule: ${msg}`);
       }
     },
     [pauseScheduleMutation, resumeScheduleMutation],
@@ -277,12 +350,15 @@ export function SkillStorePage(): React.JSX.Element {
     setActiveSearch('');
     setSearchQuery('');
     setStatusFilter('all');
+    setItemsOffset(0);
+    setMutationError(null);
   }, []);
 
   const handleCollectionChange = useCallback((value: string) => {
     setSelectedCollection(value === 'all' ? '' : value);
     setActiveSearch('');
     setSearchQuery('');
+    setItemsOffset(0);
   }, []);
 
   // Loading state
@@ -317,7 +393,7 @@ export function SkillStorePage(): React.JSX.Element {
   const collections = collectionsQuery.data?.collections ?? [];
   const schedules = schedulesQuery.data?.schedules ?? [];
   const totalItems = activeSearch
-    ? (searchMutation.data as SkillStoreSearchResponse | undefined)?.total ?? 0
+    ? searchData?.total ?? 0
     : itemsQuery.data?.total ?? 0;
 
   return (
@@ -387,77 +463,101 @@ export function SkillStorePage(): React.JSX.Element {
             </div>
 
             {selectedSkillId && (
-              <Tabs defaultValue="items" className="flex-1 flex flex-col min-h-0">
-                <TabsList>
-                  <TabsTrigger value="items" data-testid="tab-items">
-                    <Package className="mr-1.5 size-4" />
-                    Items ({totalItems})
-                  </TabsTrigger>
-                  <TabsTrigger value="collections" data-testid="tab-collections">
-                    <Database className="mr-1.5 size-4" />
-                    Collections ({collections.length})
-                  </TabsTrigger>
-                  <TabsTrigger value="schedules" data-testid="tab-schedules">
-                    <Clock className="mr-1.5 size-4" />
-                    Schedules ({schedules.length})
-                  </TabsTrigger>
-                </TabsList>
+              <>
+                {/* Mutation error banner */}
+                {mutationError && (
+                  <div
+                    className="mb-3 flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+                    role="alert"
+                    data-testid="mutation-error-banner"
+                  >
+                    <AlertCircle className="size-4 shrink-0" />
+                    <span className="flex-1">{mutationError}</span>
+                    <button
+                      onClick={() => setMutationError(null)}
+                      className="shrink-0 text-destructive/70 hover:text-destructive"
+                      aria-label="Dismiss error"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                )}
 
-                {/* Items Tab */}
-                <TabsContent value="items" className="flex-1 flex flex-col min-h-0">
-                  <ItemsPanel
-                    items={displayItems}
-                    collections={collections}
-                    selectedCollection={selectedCollection}
-                    statusFilter={statusFilter}
-                    searchQuery={searchQuery}
-                    activeSearch={activeSearch}
-                    isLoading={itemsQuery.isLoading || searchMutation.isPending}
-                    isError={itemsQuery.isError}
-                    error={itemsQuery.error}
-                    onCollectionChange={handleCollectionChange}
-                    onStatusChange={setStatusFilter}
-                    onSearchChange={setSearchQuery}
-                    onSearch={handleSearch}
-                    onClearSearch={handleClearSearch}
-                    onItemClick={handleItemClick}
-                    onDeleteItem={(item) => setDeleteTarget(item)}
-                    onRefetch={() => itemsQuery.refetch()}
-                  />
-                </TabsContent>
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
+                  <TabsList>
+                    <TabsTrigger value="items" data-testid="tab-items">
+                      <Package className="mr-1.5 size-4" />
+                      Items ({totalItems})
+                    </TabsTrigger>
+                    <TabsTrigger value="collections" data-testid="tab-collections">
+                      <Database className="mr-1.5 size-4" />
+                      Collections ({collections.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="schedules" data-testid="tab-schedules">
+                      <Clock className="mr-1.5 size-4" />
+                      Schedules ({schedules.length})
+                    </TabsTrigger>
+                  </TabsList>
 
-                {/* Collections Tab */}
-                <TabsContent value="collections" className="flex-1 flex flex-col min-h-0">
-                  <CollectionsPanel
-                    collections={collections}
-                    isLoading={collectionsQuery.isLoading}
-                    isError={collectionsQuery.isError}
-                    error={collectionsQuery.error}
-                    onRefetch={() => collectionsQuery.refetch()}
-                    onCollectionClick={(name) => {
-                      setSelectedCollection(name);
-                      // Switch to items tab programmatically by updating the parent
-                      const itemsTab = document.querySelector('[data-testid="tab-items"]') as HTMLElement;
-                      if (itemsTab) itemsTab.click();
-                    }}
-                  />
-                </TabsContent>
+                  {/* Items Tab */}
+                  <TabsContent value="items" className="flex-1 flex flex-col min-h-0">
+                    <ItemsPanel
+                      items={displayItems}
+                      totalItems={totalItems}
+                      collections={collections}
+                      selectedCollection={selectedCollection}
+                      statusFilter={statusFilter}
+                      searchQuery={searchQuery}
+                      activeSearch={activeSearch}
+                      isLoading={itemsQuery.isLoading || searchMutation.isPending}
+                      isError={itemsQuery.isError}
+                      error={itemsQuery.error}
+                      offset={itemsOffset}
+                      pageSize={ITEMS_PER_PAGE}
+                      onPageChange={setItemsOffset}
+                      onCollectionChange={handleCollectionChange}
+                      onStatusChange={setStatusFilter}
+                      onSearchChange={setSearchQuery}
+                      onSearch={handleSearch}
+                      onClearSearch={handleClearSearch}
+                      onItemClick={handleItemClick}
+                      onDeleteItem={(item) => setDeleteTarget(item)}
+                      onRefetch={() => itemsQuery.refetch()}
+                    />
+                  </TabsContent>
 
-                {/* Schedules Tab */}
-                <TabsContent value="schedules" className="flex-1 flex flex-col min-h-0">
-                  <SchedulesPanel
-                    schedules={schedules}
-                    isLoading={schedulesQuery.isLoading}
-                    isError={schedulesQuery.isError}
-                    error={schedulesQuery.error}
-                    onRefetch={() => schedulesQuery.refetch()}
-                    onTrigger={handleTriggerSchedule}
-                    onToggle={handleToggleSchedule}
-                    isTriggerPending={triggerScheduleMutation.isPending}
-                    isTogglePending={pauseScheduleMutation.isPending || resumeScheduleMutation.isPending}
-                  />
-                </TabsContent>
-              </Tabs>
+                  {/* Collections Tab */}
+                  <TabsContent value="collections" className="flex-1 flex flex-col min-h-0">
+                    <CollectionsPanel
+                      collections={collections}
+                      isLoading={collectionsQuery.isLoading}
+                      isError={collectionsQuery.isError}
+                      error={collectionsQuery.error}
+                      onRefetch={() => collectionsQuery.refetch()}
+                      onCollectionClick={(name) => {
+                        setSelectedCollection(name);
+                        setItemsOffset(0);
+                        setActiveTab('items');
+                      }}
+                    />
+                  </TabsContent>
+
+                  {/* Schedules Tab */}
+                  <TabsContent value="schedules" className="flex-1 flex flex-col min-h-0">
+                    <SchedulesPanel
+                      schedules={schedules}
+                      isLoading={schedulesQuery.isLoading}
+                      isError={schedulesQuery.isError}
+                      error={schedulesQuery.error}
+                      onRefetch={() => schedulesQuery.refetch()}
+                      onTrigger={handleTriggerSchedule}
+                      onToggle={handleToggleSchedule}
+                      isTriggerPending={triggerScheduleMutation.isPending}
+                      isTogglePending={pauseScheduleMutation.isPending || resumeScheduleMutation.isPending}
+                    />
+                  </TabsContent>
+                </Tabs>
+              </>
             )}
           </>
         )}
@@ -514,6 +614,7 @@ export function SkillStorePage(): React.JSX.Element {
 
 interface ItemsPanelProps {
   items: SkillStoreItem[];
+  totalItems: number;
   collections: SkillStoreCollection[];
   selectedCollection: string;
   statusFilter: string;
@@ -522,6 +623,9 @@ interface ItemsPanelProps {
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
+  offset: number;
+  pageSize: number;
+  onPageChange: (offset: number) => void;
   onCollectionChange: (value: string) => void;
   onStatusChange: (value: string) => void;
   onSearchChange: (value: string) => void;
@@ -534,6 +638,7 @@ interface ItemsPanelProps {
 
 function ItemsPanel({
   items,
+  totalItems,
   collections,
   selectedCollection,
   statusFilter,
@@ -542,6 +647,9 @@ function ItemsPanel({
   isLoading,
   isError,
   error,
+  offset,
+  pageSize,
+  onPageChange,
   onCollectionChange,
   onStatusChange,
   onSearchChange,
@@ -648,6 +756,7 @@ function ItemsPanel({
           </CardContent>
         </Card>
       ) : (
+        <>
         <ScrollArea className="flex-1">
           <div className="space-y-2" data-testid="item-list">
             {items.map((item) => (
@@ -655,7 +764,16 @@ function ItemsPanel({
                 key={item.id}
                 data-testid="skill-store-item-card"
                 className="group cursor-pointer transition-colors hover:bg-accent/30"
+                role="button"
+                tabIndex={0}
+                aria-label={`View item: ${item.title || item.key}`}
                 onClick={() => onItemClick(item)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onItemClick(item);
+                  }
+                }}
               >
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-2">
@@ -729,6 +847,40 @@ function ItemsPanel({
             ))}
           </div>
         </ScrollArea>
+
+        {/* Pagination controls */}
+        {!activeSearch && totalItems > pageSize && (
+          <div className="flex items-center justify-between pt-3 border-t" data-testid="pagination-controls">
+            <span className="text-sm text-muted-foreground">
+              Showing {offset + 1}&ndash;{Math.min(offset + pageSize, totalItems)} of {totalItems}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={offset === 0}
+                onClick={() => onPageChange(Math.max(0, offset - pageSize))}
+                aria-label="Previous page"
+                data-testid="pagination-prev"
+              >
+                <ChevronLeft className="size-4 mr-1" />
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={offset + pageSize >= totalItems}
+                onClick={() => onPageChange(offset + pageSize)}
+                aria-label="Next page"
+                data-testid="pagination-next"
+              >
+                Next
+                <ChevronRight className="size-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
+        </>
       )}
     </div>
   );
@@ -791,7 +943,16 @@ function CollectionsPanel({
           <Card
             key={col.collection}
             className="cursor-pointer transition-colors hover:bg-accent/30"
+            role="button"
+            tabIndex={0}
+            aria-label={`View collection: ${col.collection} (${col.count} items)`}
             onClick={() => onCollectionClick(col.collection)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onCollectionClick(col.collection);
+              }
+            }}
             data-testid="collection-card"
           >
             <CardContent className="p-4">
@@ -888,7 +1049,17 @@ function SchedulesPanel({
                 <div className="flex items-center justify-between gap-2">
                   <div
                     className="flex-1 min-w-0 cursor-pointer"
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isExpanded}
+                    aria-label={`${isExpanded ? 'Collapse' : 'Expand'} schedule: ${schedule.cron_expression}`}
                     onClick={() => setExpandedId(isExpanded ? null : schedule.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setExpandedId(isExpanded ? null : schedule.id);
+                      }
+                    }}
                   >
                     <div className="flex items-center gap-2 flex-wrap">
                       <code className="text-sm font-mono bg-muted px-2 py-0.5 rounded">
@@ -955,6 +1126,8 @@ function SchedulesPanel({
                     <button
                       className="text-muted-foreground hover:text-foreground transition-colors"
                       onClick={() => setExpandedId(isExpanded ? null : schedule.id)}
+                      aria-expanded={isExpanded}
+                      aria-label={isExpanded ? 'Collapse schedule details' : 'Expand schedule details'}
                     >
                       {isExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
                     </button>
@@ -977,7 +1150,7 @@ function SchedulesPanel({
                     {schedule.webhook_headers && Object.keys(schedule.webhook_headers).length > 0 && (
                       <div>
                         <p className="text-xs font-medium text-muted-foreground mb-1">Headers</p>
-                        <JsonViewer data={schedule.webhook_headers} />
+                        <HeadersViewer headers={schedule.webhook_headers as Record<string, string>} />
                       </div>
                     )}
                     {schedule.payload_template && (
