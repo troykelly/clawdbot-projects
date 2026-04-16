@@ -133,7 +133,7 @@
     "cmdk": "^1.1.1",
     "cron-parser": "^5.5.0",
     "docx": "^9.6.1",
-    "dompurify": "^3.3.2",
+    "dompurify": "^3.4.0",
     "fastify": "^5.8.2",
     "fastify-raw-body": "^5.0.0",
     "handlebars": "^4.7.8",
