@@ -144,7 +144,7 @@
     "lexical": "^0.41.0",
     "lib0": "^0.2.117",
     "lucide-react": "^0.577.0",
-    "mermaid": "^11.13.0",
+    "mermaid": "^11.15.0",
     "mqtt": "^5.15.0",
     "next-themes": "^0.4.6",
     "openapi-types": "^12.1.3",
