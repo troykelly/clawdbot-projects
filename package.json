@@ -154,7 +154,7 @@
     "radix-ui": "^1.4.3",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-router": "^7.13.1",
+    "react-router": "^7.15.0",
     "rrule": "^2.8.1",
     "sonner": "^2.0.7",
     "ssh2": "^1.17.0",
